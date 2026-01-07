@@ -3,9 +3,10 @@ package notify
 import (
 	"bytes"
 	"context"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"sync"
 	"time"
@@ -170,7 +171,11 @@ func (m *MultiNotifier) sendWithRetries(ctx context.Context, s Service, title, m
 func (m *MultiNotifier) backoffDuration(attempt int) time.Duration {
 	d := notifierBaseBackoff * time.Duration(1<<uint(attempt-1))
 	if notifierBackoffJitter > 0 {
-		d += time.Duration(rand.Int63n(int64(notifierBackoffJitter)))
+		// Use crypto/rand to generate non-predictable jitter for backoff
+		max := big.NewInt(int64(notifierBackoffJitter))
+		if n, err := crand.Int(crand.Reader, max); err == nil {
+			d += time.Duration(n.Int64())
+		}
 	}
 	return d
 }
