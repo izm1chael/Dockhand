@@ -15,7 +15,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o dockhand ./cmd/dockhand
 
 # Final Stage (Minimal & Secure)
-FROM alpine:3.21
+FROM alpine:3.23.2
 
 # Install CA certs and tzdata for timezone support
 RUN apk add --no-cache ca-certificates tzdata
