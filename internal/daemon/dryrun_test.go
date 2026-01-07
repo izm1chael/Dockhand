@@ -30,7 +30,7 @@ func TestDaemonDryRunSkipsRecreate(t *testing.T) {
 	cfg.GenericWebhookURL = h.URL
 	cfg.PatchWindow = "00:00-23:59"
 	cfg.DryRun = true
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	d.RunOnce()
 	if fc.recreated != 0 {
 		t.Fatalf("expected recreate to be skipped in dry-run, got %d", fc.recreated)

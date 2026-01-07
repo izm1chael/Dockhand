@@ -79,6 +79,13 @@ func applyBasicEnv(cfg *Config) error {
 	if err := setBoolEnv("DOCKHAND_SANITIZE_NAMES", func(b bool) { cfg.SanitizeNames = b }); err != nil {
 		return err
 	}
+	if v := os.Getenv("DOCKHAND_DOCKER_HOSTS"); v != "" {
+		parts := strings.Split(v, ",")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+		}
+		cfg.DockerHosts = parts
+	}
 	return nil
 }
 

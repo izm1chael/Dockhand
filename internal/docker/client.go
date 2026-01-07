@@ -198,6 +198,30 @@ func NewClientWithAuth(user, pass string) (Client, error) {
 	return NewClientWithAuthWithSanitize(user, pass, true)
 }
 
+// NewClientForHost returns a client configured for a specific host endpoint
+// host may be empty to indicate default behavior (FromEnv).
+func NewClientForHost(host, user, pass string, sanitize bool) (Client, error) {
+	opts := []client.Opt{client.WithAPIVersionNegotiation()}
+	if host != "" {
+		opts = append(opts, client.WithHost(host))
+	} else {
+		opts = append(opts, client.FromEnv)
+	}
+
+	c, err := client.NewClientWithOpts(opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	s := &sdkClient{cli: c, sanitizeNames: sanitize}
+	if user != "" || pass != "" {
+		auth := map[string]string{"username": user, "password": pass}
+		b, _ := json.Marshal(auth)
+		s.registryAuth = base64.StdEncoding.EncodeToString(b)
+	}
+	return s, nil
+}
+
 func (s *sdkClient) ListRunningContainers(ctx context.Context) ([]Container, error) {
 	list, err := s.cli.ContainerList(ctx, types.ContainerListOptions{All: false})
 	if err != nil {

@@ -27,7 +27,7 @@ type failureInfo struct {
 
 type Daemon struct {
 	cfg      *config.Config
-	client   docker.Client
+	hosts    []Host
 	resolver *semver.Resolver // FIELD ADDED
 	quit     chan struct{}
 	wg       sync.WaitGroup   // tracks active reconciliation passes
@@ -41,8 +41,15 @@ type Daemon struct {
 }
 
 // New creates a daemon with an injected docker client
-func New(cfg *config.Config, client docker.Client) *Daemon {
-	d := &Daemon{cfg: cfg, client: client, resolver: semver.NewResolver(), quit: make(chan struct{}), Now: time.Now, exitFunc: os.Exit}
+// Host represents a managed Docker endpoint
+type Host struct {
+	Name   string
+	Client docker.Client
+}
+
+// New creates a daemon with an injected list of hosts to manage
+func New(cfg *config.Config, hosts []Host) *Daemon {
+	d := &Daemon{cfg: cfg, hosts: hosts, resolver: semver.NewResolver(), quit: make(chan struct{}), Now: time.Now, exitFunc: os.Exit}
 
 	// Initialize notifiers
 	d.initNotifiers()
@@ -91,15 +98,17 @@ func (d *Daemon) initNotifiers() {
 // after a crash or interrupted update and attempts to rename them back to the
 // original name when no replacement exists.
 func (d *Daemon) recoverStaleOldContainers(ctx context.Context) {
-	list, err := d.client.ListAllContainers(ctx)
-	if err != nil {
-		logging.Get().Warn().Err(err).Msg("failed listing containers for recovery pass")
-		return
-	}
-	existing := d.buildExistingNames(list)
-	entries := d.findStaleEntries(list, existing)
-	for _, e := range entries {
-		d.recoverStaleEntry(ctx, e)
+	for _, h := range d.hosts {
+		list, err := h.Client.ListAllContainers(ctx)
+		if err != nil {
+			logging.Get().Warn().Err(err).Str("host", h.Name).Msg("failed listing containers for recovery pass")
+			continue
+		}
+		existing := d.buildExistingNames(list)
+		entries := d.findStaleEntries(list, existing)
+		for _, e := range entries {
+			d.recoverStaleEntry(ctx, h.Client, e)
+		}
 	}
 }
 
@@ -161,9 +170,10 @@ func (d *Daemon) findStaleEntries(list []docker.Container, existing map[string]s
 }
 
 // recoverStaleEntry attempts to rename a stale '-old-' container back to its original name
-func (d *Daemon) recoverStaleEntry(ctx context.Context, e staleEntry) {
+// recoverStaleEntry attempts to rename a stale '-old-' container back to its original name
+func (d *Daemon) recoverStaleEntry(ctx context.Context, cli docker.Client, e staleEntry) {
 	logging.Get().Warn().Str("found", e.trimmed).Str("target", e.orig).Msg("stale old container detected; attempting recovery")
-	if err := d.client.RenameContainer(ctx, e.c.ID, e.orig); err != nil {
+	if err := cli.RenameContainer(ctx, e.c.ID, e.orig); err != nil {
 		logging.Get().Error().Err(err).Str("container", e.c.ID).Msg("failed to rename stale container")
 		if d.notifier != nil {
 			d.notify(ctx, "warning", "Recovery failed", fmt.Sprintf("failed to rename %s back to %s: %v", e.trimmed, e.orig, err))
@@ -219,77 +229,61 @@ func (d *Daemon) once(ctx context.Context) {
 		metrics.IncPatchWindowSkip()
 		return
 	}
-	containers, err := d.client.ListRunningContainers(ctx)
-	if err != nil {
-		logging.Get().Error().Err(err).Msg("failed to list containers")
-		return
-	}
-
-	// Determine concurrency limit
+	// Shared concurrency limit across ALL hosts
 	limit := d.cfg.MaxConcurrentUpdates
 	if limit < 1 {
 		limit = 1
 	}
-
-	// Semaphore to limit concurrency
 	sem := make(chan struct{}, limit)
 	var wg sync.WaitGroup
 
-	// Channel to signal global stop (e.g. if self-update is triggered)
+	// Global stop signal
 	stopCh := make(chan struct{})
 	var stopOnce sync.Once
-	triggerStop := func() {
-		stopOnce.Do(func() {
-			close(stopCh)
-		})
-	}
+	triggerStop := func() { stopOnce.Do(func() { close(stopCh) }) }
 
-	// Iterate containers and spawn workers
-	for _, c := range containers {
-		// If a stop signal was received (e.g. self-update triggered), stop spawning
-		select {
-		case <-stopCh:
-			goto WaitAndExit
-		case <-ctx.Done():
-			goto WaitAndExit
-		default:
+	// Iterate over all hosts
+	for _, h := range d.hosts {
+		containers, err := h.Client.ListRunningContainers(ctx)
+		if err != nil {
+			logging.Get().Error().Err(err).Str("host", h.Name).Msg("failed to list containers")
+			continue
 		}
 
-		wg.Add(1)
-		go func(c docker.Container) {
-			defer wg.Done()
-
-			// Acquire semaphore (blocks if limit reached)
+		for _, c := range containers {
+			// Check stop signal
 			select {
-			case sem <- struct{}{}:
-				// Acquired
-				defer func() { <-sem }() // Release on exit
 			case <-stopCh:
-				// Abort if global stop triggered while waiting
-				return
+				goto WaitAndExit
 			case <-ctx.Done():
-				return
-			}
-
-			// Double-check stop signal after acquiring (in case we waited a while)
-			select {
-			case <-stopCh:
-				return
+				goto WaitAndExit
 			default:
 			}
 
-			// Process container
-			if shouldStop := d.handleContainer(ctx, c); shouldStop {
-				// If handleContainer returns true (self-update), trigger global stop
-				logging.Get().Info().Str("container", c.ID).Msg("self-update triggered; aborting remaining parallel tasks")
-				triggerStop()
-			}
-		}(c)
+			wg.Add(1)
+			// PASS THE SPECIFIC CLIENT (h.Client) to the goroutine
+			go func(cli docker.Client, c docker.Container, hostName string) {
+				defer wg.Done()
+
+				select {
+				case sem <- struct{}{}:
+					defer func() { <-sem }()
+				case <-stopCh:
+					return
+				case <-ctx.Done():
+					return
+				}
+
+				if shouldStop := d.handleContainer(ctx, cli, c); shouldStop {
+					logging.Get().Info().Str("container", c.ID).Str("host", hostName).Msg("self-update triggered; aborting remaining parallel tasks")
+					triggerStop()
+				}
+			}(h.Client, c, h.Name)
+		}
 	}
 
 WaitAndExit:
 	wg.Wait()
-	// Record last run timestamp for metrics
 	metrics.SetLastRun(d.Now())
 }
 
@@ -316,7 +310,7 @@ func (d *Daemon) shouldManage(c docker.Container) bool {
 
 // handleContainer pulls image for a container and triggers processing if an update is found.
 // Returns true when the daemon should stop (e.g., due to self-update initiation).
-func (d *Daemon) handleContainer(ctx context.Context, c docker.Container) bool {
+func (d *Daemon) handleContainer(ctx context.Context, cli docker.Client, c docker.Container) bool {
 	if !d.shouldManage(c) {
 		return false
 	}
@@ -330,13 +324,13 @@ func (d *Daemon) handleContainer(ctx context.Context, c docker.Container) bool {
 	logging.Get().Info().Strs("names", c.Names).Str("id", c.ID).Str("target", targetImage).Msg("considering container")
 
 	// 2. Pull and compute run image (may be pinned)
-	pulledID, runImage, err := d.pullAndPin(ctx, targetImage, c)
+	pulledID, runImage, err := d.pullAndPin(ctx, cli, targetImage, c)
 	if err != nil {
 		return false
 	}
 
 	// 3. Decide whether to process/update
-	return d.decideAndProcess(ctx, c, targetImage, pulledID, runImage)
+	return d.decideAndProcess(ctx, cli, c, targetImage, pulledID, runImage)
 }
 
 // resolveTargetImage applies SemVer policy (if present) and returns the
@@ -364,8 +358,8 @@ func (d *Daemon) resolveTargetImage(ctx context.Context, c docker.Container) (st
 // actual runImage (which may be the repo digest if pinning is enabled).
 // On error it logs, notifies if appropriate, increments metrics, and
 // returns an error.
-func (d *Daemon) pullAndPin(ctx context.Context, targetImage string, c docker.Container) (string, string, error) {
-	pulledID, repoDigest, err := d.client.PullImage(ctx, targetImage)
+func (d *Daemon) pullAndPin(ctx context.Context, cli docker.Client, targetImage string, c docker.Container) (string, string, error) {
+	pulledID, repoDigest, err := cli.PullImage(ctx, targetImage)
 	if err != nil {
 		logging.Get().Error().Err(err).Str("image", targetImage).Str("container", c.ID).Msg("failed pulling image")
 		metrics.IncImagePullFailure()
@@ -393,11 +387,11 @@ func (d *Daemon) pullAndPin(ctx context.Context, targetImage string, c docker.Co
 
 // decideAndProcess determines if an update should be applied and triggers processing.
 // Returns true when daemon should stop (e.g., self-update initiated).
-func (d *Daemon) decideAndProcess(ctx context.Context, c docker.Container, targetImage, pulledID, runImage string) bool {
+func (d *Daemon) decideAndProcess(ctx context.Context, cli docker.Client, c docker.Container, targetImage, pulledID, runImage string) bool {
 	// Update when tag changed or digest changed
 	if targetImage != c.Image || (pulledID != "" && pulledID != c.ImageID) {
 		logging.Get().Info().Str("container", c.ID).Str("image_new", runImage).Msg("update required")
-		if stop := d.processContainer(ctx, c, pulledID, runImage); stop {
+		if stop := d.processContainer(ctx, cli, c, pulledID, runImage); stop {
 			return true
 		}
 		return false
@@ -410,7 +404,7 @@ func (d *Daemon) decideAndProcess(ctx context.Context, c docker.Container, targe
 	}
 	if runImage != c.Image && shouldPin {
 		logging.Get().Info().Str("container", c.ID).Str("image_new", runImage).Msg("content unchanged, but applying digest pin")
-		if stop := d.processContainer(ctx, c, pulledID, runImage); stop {
+		if stop := d.processContainer(ctx, cli, c, pulledID, runImage); stop {
 			return true
 		}
 	}
@@ -418,9 +412,9 @@ func (d *Daemon) decideAndProcess(ctx context.Context, c docker.Container, targe
 }
 
 // processContainer handles update logic for a single container. Returns true if the daemon should stop (e.g. when initiating self-update)
-func (d *Daemon) processContainer(ctx context.Context, c docker.Container, pulledID string, targetImage string) bool {
+func (d *Daemon) processContainer(ctx context.Context, cli docker.Client, c docker.Container, pulledID string, targetImage string) bool {
 	// Self-update protection
-	if d.handleSelfUpdate(ctx, c, pulledID) {
+	if d.handleSelfUpdate(ctx, cli, c, pulledID) {
 		return true
 	}
 	// Dry-run
@@ -428,19 +422,19 @@ func (d *Daemon) processContainer(ctx context.Context, c docker.Container, pulle
 		return false
 	}
 	// Perform actual update
-	d.performUpdate(ctx, c, targetImage)
+	d.performUpdate(ctx, cli, c, targetImage)
 	return false
 }
 
 // handleSelfUpdate returns true when a self-update was initiated and the daemon should stop
-func (d *Daemon) handleSelfUpdate(ctx context.Context, c docker.Container, pulledID string) bool {
+func (d *Daemon) handleSelfUpdate(ctx context.Context, cli docker.Client, c docker.Container, pulledID string) bool {
 	if !d.isSelfContainer(c) {
 		return false
 	}
 	logging.Get().Info().Msg("self-update detected! initiating automated update sequence.")
 	d.notify(ctx, "success", "Self-Update Initiated", "Spawning worker to apply update...")
 	// Fire and forget the worker; then stop this daemon to allow replacement
-	go d.triggerSelfUpdate(ctx, c.ID, pulledID)
+	go d.triggerSelfUpdate(ctx, cli, c.ID, pulledID)
 	return true
 }
 
@@ -455,12 +449,12 @@ func (d *Daemon) handleDryRun(ctx context.Context, c docker.Container, pulledID 
 }
 
 // performUpdate performs RecreateContainer and handles success/failure notifications and cleanup
-func (d *Daemon) performUpdate(ctx context.Context, c docker.Container, targetImage string) {
+func (d *Daemon) performUpdate(ctx context.Context, cli docker.Client, c docker.Container, targetImage string) {
 	oldImage := c.ImageID
 	opts := docker.RecreateOptions{VerifyTimeout: d.cfg.VerifyTimeout, VerifyInterval: d.cfg.VerifyInterval, HealthcheckCmd: d.cfg.VerifyCommand, HookTimeout: d.cfg.HookTimeout}
 	updateStart := d.Now()
 	// Use targetImage here instead of c.Image
-	if err := d.client.RecreateContainer(ctx, c, targetImage, opts); err != nil {
+	if err := cli.RecreateContainer(ctx, c, targetImage, opts); err != nil {
 		logging.Get().Error().Err(err).Str("container", c.ID).Msg("failed to update container")
 		d.notify(ctx, "failure", fmt.Sprintf("Update failed: %s", c.ID), err.Error())
 		metrics.IncUpdateFailed()
@@ -474,7 +468,7 @@ func (d *Daemon) performUpdate(ctx context.Context, c docker.Container, targetIm
 	d.notify(ctx, "success", fmt.Sprintf("Container updated: %s", c.ID), fmt.Sprintf("image=%s old_image=%s", targetImage, oldImage))
 
 	if oldImage != "" {
-		if err := d.client.RemoveImage(ctx, oldImage); err != nil {
+		if err := cli.RemoveImage(ctx, oldImage); err != nil {
 			logging.Get().Error().Err(err).Str("old_image", oldImage).Msg("failed to remove old image")
 			d.notify(ctx, "warning", fmt.Sprintf("Cleanup failed: %s", c.ID), fmt.Sprintf("old_image=%s err=%v", oldImage, err))
 			metrics.IncCleanupFailed()
@@ -545,7 +539,7 @@ func (d *Daemon) clearPullFailure(image string) {
 
 // triggerSelfUpdate spawns a worker container (using the provided newImage) to perform
 // the self-update, then stops this daemon and exits.
-func (d *Daemon) triggerSelfUpdate(ctx context.Context, myContainerID, newImage string) {
+func (d *Daemon) triggerSelfUpdate(ctx context.Context, cli docker.Client, myContainerID, newImage string) {
 	logging.Get().Info().Str("target", myContainerID).Str("image", newImage).Msg("spawning self-update worker")
 	// use worker name with a timestamp suffix to avoid collisions
 	name := fmt.Sprintf("dockhand-updater-%d", time.Now().Unix())
@@ -553,7 +547,7 @@ func (d *Daemon) triggerSelfUpdate(ctx context.Context, myContainerID, newImage 
 	binds := []string{fmt.Sprintf("%s:/var/run/docker.sock", d.cfg.HostSocketPath)}
 	cmd := []string{"/app/dockhand", "--self-update-worker", myContainerID, "--self-update-image", newImage}
 	labels := map[string]string{"dockhand.worker": "true"}
-	if _, err := d.client.SpawnWorker(ctx, newImage, cmd, name, binds, labels); err != nil {
+	if _, err := cli.SpawnWorker(ctx, newImage, cmd, name, binds, labels); err != nil {
 		logging.Get().Error().Err(err).Msg("failed to spawn update worker")
 		return
 	}

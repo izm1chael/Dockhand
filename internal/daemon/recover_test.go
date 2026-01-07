@@ -53,7 +53,7 @@ func TestRecoverStaleOldRenamesWhenNoNewContainer(t *testing.T) {
 	fc := &fakeClientForRecover{
 		containers: []docker.Container{{ID: "oldid", Names: []string{"/myapp-old-123"}}},
 	}
-	d := &Daemon{cfg: cfg, client: fc, notifier: nil}
+	d := &Daemon{cfg: cfg, hosts: []Host{{Name: "test", Client: fc}}, notifier: nil}
 	d.recoverStaleOldContainers(context.Background())
 	if newName, ok := fc.renamed["oldid"]; !ok || newName != "myapp" {
 		t.Fatalf("expected rename of oldid to myapp, got %v", fc.renamed)
@@ -68,7 +68,7 @@ func TestRecoverStaleOldNoRenameWhenNewExists(t *testing.T) {
 			{ID: "newid", Names: []string{"/myapp"}},
 		},
 	}
-	d := &Daemon{cfg: cfg, client: fc, notifier: nil}
+	d := &Daemon{cfg: cfg, hosts: []Host{{Name: "test", Client: fc}}, notifier: nil}
 	d.recoverStaleOldContainers(context.Background())
 	if len(fc.renamed) != 0 {
 		t.Fatalf("expected no renames, got %v", fc.renamed)

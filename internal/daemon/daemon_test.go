@@ -104,7 +104,7 @@ func TestDaemonOnceTriggersRecreateOnNewImage(t *testing.T) {
 	cfg.PollInterval = 10 * time.Millisecond
 	cfg.PatchWindow = "" // allow any time
 	cfg.DryRun = false
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	d.RunOnce()
 	if fc.recreated != 1 {
 		t.Fatalf("expected recreate to be called once, got %d", fc.recreated)
@@ -122,7 +122,7 @@ func TestDaemonSkipsNonLatestTag(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.PollInterval = 10 * time.Millisecond
 	cfg.PatchWindow = "" // allow any time
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	d.RunOnce()
 	if fc.recreated != 0 {
 		t.Fatalf("expected no recreate for non-latest tag, got %d", fc.recreated)
@@ -134,7 +134,7 @@ func TestDaemonRespectsPatchWindow(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.PatchWindow = "23:00-01:00"
 	// set time to 12:00 UTC - outside window
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	d.Now = func() time.Time { return time.Date(2026, 1, 6, 12, 0, 0, 0, time.Local) }
 	d.RunOnce()
 	if fc.recreated != 0 {
@@ -163,7 +163,7 @@ func TestDaemonNotifiesOnSuccess(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.GenericWebhookURL = h.URL
 	cfg.PatchWindow = fullDayWindow
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	d.RunOnce()
 	// wait for async notification sends to complete
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -186,7 +186,7 @@ func TestDaemonRemovesOldImageOnSuccess(t *testing.T) {
 	fc := &fakeClient{pulledID: testNewImage}
 	cfg := config.DefaultConfig()
 	cfg.PatchWindow = fullDayWindow
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	d.RunOnce()
 	if len(fc.removedImages) != 1 {
 		t.Fatalf("expected old image to be removed, got %v", fc.removedImages)
@@ -203,7 +203,7 @@ func TestDaemonPassesVerifyOptions(t *testing.T) {
 	cfg.VerifyTimeout = 2 * time.Second
 	cfg.VerifyInterval = 100 * time.Millisecond
 	cfg.VerifyCommand = []string{"/bin/true"}
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	d.RunOnce()
 	if fc.lastOpts.VerifyTimeout != 2*time.Second {
 		t.Fatalf("expected VerifyTimeout to be 2s, got %v", fc.lastOpts.VerifyTimeout)
@@ -236,7 +236,7 @@ func TestDaemonInitializesNotifiers(t *testing.T) {
 	cfg.GotifyToken = "tok"
 	cfg.PushoverUser = "u"
 	cfg.PushoverToken = "tok"
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	if d.notifier == nil {
 		t.Fatalf("expected notifier to be initialized")
 	}
@@ -259,7 +259,7 @@ func TestDaemonNotifiesOnFailure(t *testing.T) {
 	}))
 	defer h.Close()
 	cfg.GenericWebhookURL = h.URL
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	d.RunOnce()
 	// wait for async notification sends to complete
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -291,7 +291,7 @@ func TestDaemonRespectsDisableLabel(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.PollInterval = 10 * time.Millisecond
 	cfg.PatchWindow = "" // allow any time
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	d.RunOnce()
 	if fc.recreated != 0 {
 		t.Fatalf("expected no recreate for disabled container, got %d", fc.recreated)
@@ -308,7 +308,7 @@ func TestDaemonTriggersSelfUpdate(t *testing.T) {
 	}}}
 	cfg := config.DefaultConfig()
 	cfg.PatchWindow = fullDayWindow
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	// Prevent os.Exit in test by setting a no-op exit function.
 	// This avoids terminating the test process while still making intent clear.
 	d.exitFunc = func(code int) { /* no-op: prevents terminating the test process */ }
@@ -357,7 +357,7 @@ func TestStopCancelsInFlightOperations(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.PollInterval = 50 * time.Millisecond
 	cfg.PatchWindow = "" // allow anytime
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	// start daemon
 	go d.Start()
 	// wait until PullImage is called
@@ -397,7 +397,7 @@ func TestCircuitBreakerSuppressesRepeatedPullFailures(t *testing.T) {
 	cfg.CircuitBreakerThreshold = 3
 	cfg.CircuitBreakerCooldown = 1 * time.Second
 	cfg.GenericWebhookURL = h.URL
-	d := New(cfg, fc)
+	d := New(cfg, []Host{{Name: "test", Client: fc}})
 	// Run 5 passes quickly – expect notifications for first failure, then suppressed
 	for i := 0; i < 5; i++ {
 		d.RunOnce()

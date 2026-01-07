@@ -78,6 +78,11 @@ type Config struct {
 	// rather than a mutable tag.
 	PinDigests bool `json:"pin_digests" yaml:"pin_digests"`
 
+	// DockerHosts is a list of Docker daemon endpoints to manage.
+	// Examples: "unix:///var/run/docker.sock", "tcp://192.168.1.5:2375"
+	// If empty, defaults to local socket.
+	DockerHosts []string `json:"docker_hosts" yaml:"docker_hosts"`
+
 	// MaxConcurrentUpdates limits how many containers are processed in parallel.
 	// Default: 1 (sequential). Set to 5-10 for faster updates in large environments.
 	MaxConcurrentUpdates int `json:"max_concurrent_updates" yaml:"max_concurrent_updates"`
@@ -143,6 +148,8 @@ func DefaultConfig() *Config {
 
 		// By default run sequential updates for safety
 		MaxConcurrentUpdates: 1,
+		// By default manage local socket only (empty list implies local)
+		DockerHosts: []string{},
 	}
 }
 

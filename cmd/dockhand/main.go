@@ -77,10 +77,20 @@ func main() {
 	// Verify Docker socket is accessible (common pitfall when running in containers)
 	ensureDockerSocketAccessible()
 
-	// create docker client (with optional registry auth), then start daemon
+	// create docker clients (one per configured host) then start daemon
 	ctx := context.Background()
-	dCli := createDockerClientOrFatal(cfg)
-	startDaemonAndWait(ctx, cfg, dCli, *runOnce)
+	var hosts []daemon.Host
+	if len(cfg.DockerHosts) == 0 {
+		// default to local socket behavior
+		cli := createDockerClientOrFatal(cfg, "")
+		hosts = append(hosts, daemon.Host{Name: "local", Client: cli})
+	} else {
+		for _, endpoint := range cfg.DockerHosts {
+			cli := createDockerClientOrFatal(cfg, endpoint)
+			hosts = append(hosts, daemon.Host{Name: endpoint, Client: cli})
+		}
+	}
+	startDaemonAndWait(ctx, cfg, hosts, *runOnce)
 }
 
 // Helper to keep main clean
@@ -173,17 +183,18 @@ func ensureDockerSocketAccessible() {
 }
 
 // createDockerClientOrFatal creates a docker client or exits
-func createDockerClientOrFatal(cfg *config.Config) docker.Client {
-	cli, err := docker.NewClientWithAuthWithSanitize(cfg.RegistryUser, cfg.RegistryPass, cfg.SanitizeNames)
+// createDockerClientOrFatal creates a docker client for a given host (empty means default/env) or exits on failure
+func createDockerClientOrFatal(cfg *config.Config, host string) docker.Client {
+	cli, err := docker.NewClientForHost(host, cfg.RegistryUser, cfg.RegistryPass, cfg.SanitizeNames)
 	if err != nil {
-		logging.Get().Fatal().Err(err).Msg("failed to create docker client")
+		logging.Get().Fatal().Err(err).Str("host", host).Msg("failed to create docker client")
 	}
 	return cli
 }
 
 // startDaemonAndWait starts the daemon (or runs once) and waits for shutdown signal
-func startDaemonAndWait(ctx context.Context, cfg *config.Config, dCli docker.Client, runOnce bool) {
-	d := daemon.New(cfg, dCli)
+func startDaemonAndWait(ctx context.Context, cfg *config.Config, hosts []daemon.Host, runOnce bool) {
+	d := daemon.New(cfg, hosts)
 	if runOnce {
 		logging.Get().Info().Msg("run-once: performing a single reconciliation pass")
 		d.RunOnce()
