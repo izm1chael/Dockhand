@@ -574,36 +574,49 @@ func (s *sdkClient) runHealthcheckExec(ctx context.Context, newID string, cmd []
 	}
 	logging.Get().Info().Str("exec", execResp.ID).Msg("starting exec")
 	_ = s.cli.ContainerExecStart(ctx, execResp.ID, containertypes.ExecStartOptions{})
-	for time.Now().Before(deadline) {
-		if ctx.Err() != nil {
-			return fmt.Errorf("healthcheck canceled: %w", ctx.Err())
+
+	ok, err := s.waitForExecSuccess(ctx, execResp.ID, deadline, interval)
+	if err != nil {
+		logging.Get().Error().Err(err).Str("new", newID).Msg("exec healthcheck error; rolling back")
+		return s.rollbackRestore(ctx, newID, insp, origName)
+	}
+	if ok {
+		logging.Get().Info().Str("new", newID).Msg("healthcheck exec succeeded")
+		if err := s.cli.ContainerRemove(ctx, insp.ID, containertypes.RemoveOptions{Force: true}); err != nil {
+			logging.Get().Warn().Err(err).Str("old", insp.ID).Msg("failed removing old container after healthcheck success")
 		}
-		execInspect, err := s.cli.ContainerExecInspect(ctx, execResp.ID)
-		if err != nil {
-			logging.Get().Error().Err(err).Msg("exec inspect error")
-			break
-		}
-		if execInspect.ExitCode == 0 {
-			logging.Get().Info().Str("new", newID).Msg("healthcheck exec succeeded")
-			if err := s.cli.ContainerRemove(ctx, insp.ID, containertypes.RemoveOptions{Force: true}); err != nil {
-				logging.Get().Warn().Err(err).Str("old", insp.ID).Msg("failed removing old container after healthcheck success")
-				// attempt to continue; do not fail verify on cleanup
-			}
-			return nil
-		} else if execInspect.Running {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("healthcheck canceled: %w", ctx.Err())
-			case <-time.After(interval):
-			}
-			continue
-		} else {
-			logging.Get().Warn().Int("exit_code", execInspect.ExitCode).Msg("healthcheck exec failed")
-			break
-		}
+		return nil
 	}
 	logging.Get().Warn().Str("new", newID).Msg("healthcheck did not succeed within timeout; rolling back")
 	return s.rollbackRestore(ctx, newID, insp, origName)
+}
+
+// waitForExecSuccess polls exec inspect until success, failure or deadline.
+func (s *sdkClient) waitForExecSuccess(ctx context.Context, execID string, deadline time.Time, interval time.Duration) (bool, error) {
+	for time.Now().Before(deadline) {
+		if ctx.Err() != nil {
+			return false, fmt.Errorf("healthcheck canceled: %w", ctx.Err())
+		}
+		execInspect, err := s.cli.ContainerExecInspect(ctx, execID)
+		if err != nil {
+			logging.Get().Error().Err(err).Msg("exec inspect error")
+			return false, err
+		}
+		if execInspect.ExitCode == 0 {
+			return true, nil
+		}
+		if execInspect.Running {
+			select {
+			case <-ctx.Done():
+				return false, fmt.Errorf("healthcheck canceled: %w", ctx.Err())
+			case <-time.After(interval):
+			}
+			continue
+		}
+		logging.Get().Warn().Int("exit_code", execInspect.ExitCode).Msg("healthcheck exec failed")
+		return false, nil
+	}
+	return false, nil
 }
 
 // removeOldAndSuccess removes the old container and returns success
@@ -642,14 +655,7 @@ func (s *sdkClient) rollbackRestore(ctx context.Context, newID string, insp type
 
 // runNetworkHealthcheck performs HTTP/TCP checks if configured via labels
 func (s *sdkClient) runNetworkHealthcheck(ctx context.Context, st types.ContainerJSON, deadline time.Time, interval time.Duration) error {
-	// Extract IP. Prefer the first IP found in networks if root IP is empty
-	ip := st.NetworkSettings.IPAddress
-	if ip == "" && st.NetworkSettings.Networks != nil {
-		for _, n := range st.NetworkSettings.Networks {
-			ip = n.IPAddress
-			break
-		}
-	}
+	ip := s.getContainerIP(st)
 
 	// Check for HTTP Label
 	if urlStr, ok := st.Config.Labels["dockhand.check.http"]; ok && urlStr != "" {
@@ -668,6 +674,26 @@ func (s *sdkClient) runNetworkHealthcheck(ctx context.Context, st types.Containe
 	}
 
 	return nil
+}
+
+// getContainerIP returns the preferred IP for a container, preferring the primary NetworkSettings
+// IPAddress and falling back to the first network endpoint IP if available.
+func (s *sdkClient) getContainerIP(st types.ContainerJSON) string {
+	if st.NetworkSettings == nil {
+		return ""
+	}
+	ip := st.NetworkSettings.IPAddress
+	if ip != "" {
+		return ip
+	}
+	if st.NetworkSettings.Networks != nil {
+		for _, n := range st.NetworkSettings.Networks {
+			if n.IPAddress != "" {
+				return n.IPAddress
+			}
+		}
+	}
+	return ""
 }
 
 // pollNetwork loops until the check succeeds or deadline is exceeded
