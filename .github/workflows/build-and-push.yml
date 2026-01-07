@@ -43,11 +43,11 @@ jobs:
           # Lowercase the repository (docker tags must be lowercase)
           REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
 
-          # Base tags: latest and commit SHA (use real newlines, not literal \n)
+          # 1. Start with the base 'latest' tags
           TAGS="ghcr.io/${REPO_LOWER}:latest
           docker.io/${REPO_LOWER}:latest"
 
-          # If this run is a tag push (e.g., v1.0.0), add the version tag
+          # 2. If this is a release tag (e.g. v1.2.0), append the versioned tags
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION=${GITHUB_REF##refs/tags/}
             TAGS="$TAGS
@@ -55,7 +55,7 @@ jobs:
           docker.io/${REPO_LOWER}:${VERSION}"
           fi
 
-          # Output as multi-line output to be consumed by the build step
+          # 3. Output to GitHub Actions variables
           echo "tags<<EOF" >> $GITHUB_OUTPUT
           echo "$TAGS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
