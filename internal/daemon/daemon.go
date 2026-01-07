@@ -388,8 +388,7 @@ func (d *Daemon) pullAndPin(ctx context.Context, cli docker.Client, targetImage 
 // decideAndProcess determines if an update should be applied and triggers processing.
 // Returns true when daemon should stop (e.g., self-update initiated).
 func (d *Daemon) decideAndProcess(ctx context.Context, cli docker.Client, c docker.Container, targetImage, pulledID, runImage string) bool {
-	// Update when tag changed or digest changed
-	if targetImage != c.Image || (pulledID != "" && pulledID != c.ImageID) {
+	if d.updateNeeded(targetImage, pulledID, c) {
 		logging.Get().Info().Str("container", c.ID).Str("image_new", runImage).Msg("update required")
 		if stop := d.processContainer(ctx, cli, c, pulledID, runImage); stop {
 			return true
@@ -397,18 +396,27 @@ func (d *Daemon) decideAndProcess(ctx context.Context, cli docker.Client, c dock
 		return false
 	}
 
-	// Edge case: apply pin even if content unchanged
-	shouldPin := d.cfg.PinDigests
-	if v, ok := c.Labels["dockhand.pin"]; ok {
-		shouldPin = (v == "true")
-	}
-	if runImage != c.Image && shouldPin {
+	if d.pinNeeded(c, runImage) {
 		logging.Get().Info().Str("container", c.ID).Str("image_new", runImage).Msg("content unchanged, but applying digest pin")
 		if stop := d.processContainer(ctx, cli, c, pulledID, runImage); stop {
 			return true
 		}
 	}
 	return false
+}
+
+// updateNeeded returns true when the image tag or content indicates an update is required
+func (d *Daemon) updateNeeded(targetImage, pulledID string, c docker.Container) bool {
+	return targetImage != c.Image || (pulledID != "" && pulledID != c.ImageID)
+}
+
+// pinNeeded returns true when a digest pin should be applied even if content appears unchanged
+func (d *Daemon) pinNeeded(c docker.Container, runImage string) bool {
+	shouldPin := d.cfg.PinDigests
+	if v, ok := c.Labels["dockhand.pin"]; ok {
+		shouldPin = (v == "true")
+	}
+	return runImage != c.Image && shouldPin
 }
 
 // processContainer handles update logic for a single container. Returns true if the daemon should stop (e.g. when initiating self-update)
