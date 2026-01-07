@@ -156,25 +156,33 @@ func DefaultConfig() *Config {
 // Validate returns a list of non-fatal configuration warnings, such as
 // incomplete notifier credential combinations.
 func (c *Config) Validate() []string {
-	var warnings []string
-	checks := []struct {
-		cond bool
-		msg  string
-	}{
-		{c.GotifyURL != "" && c.GotifyToken == "", "gotify URL provided but token is missing"},
-		{c.GotifyToken != "" && c.GotifyURL == "", "gotify token provided but URL is missing"},
-		{c.PushoverUser != "" && c.PushoverToken == "", "pushover user provided but token is missing"},
-		{c.PushoverToken != "" && c.PushoverUser == "", "pushover token provided but user is missing"},
-		{c.EmailHost != "" && len(c.EmailTo) == 0, "email host provided but no recipients configured (EmailTo)"},
-		{c.EmailHost == "" && len(c.EmailTo) > 0, "email recipients configured but email host is empty"},
-	}
-	for _, ch := range checks {
-		if ch.cond {
-			warnings = append(warnings, ch.msg)
-		}
-	}
+	warnings := notifierWarnings(c)
 	if pw := validatePatchWindow(c.PatchWindow); pw != "" {
 		warnings = append(warnings, pw)
+	}
+	return warnings
+}
+
+// notifierWarnings returns non-fatal warnings related to incomplete notifier configuration
+func notifierWarnings(c *Config) []string {
+	var warnings []string
+	if c.GotifyURL != "" && c.GotifyToken == "" {
+		warnings = append(warnings, "gotify URL provided but token is missing")
+	}
+	if c.GotifyToken != "" && c.GotifyURL == "" {
+		warnings = append(warnings, "gotify token provided but URL is missing")
+	}
+	if c.PushoverUser != "" && c.PushoverToken == "" {
+		warnings = append(warnings, "pushover user provided but token is missing")
+	}
+	if c.PushoverToken != "" && c.PushoverUser == "" {
+		warnings = append(warnings, "pushover token provided but user is missing")
+	}
+	if c.EmailHost != "" && len(c.EmailTo) == 0 {
+		warnings = append(warnings, "email host provided but no recipients configured (EmailTo)")
+	}
+	if c.EmailHost == "" && len(c.EmailTo) > 0 {
+		warnings = append(warnings, "email recipients configured but email host is empty")
 	}
 	return warnings
 }
