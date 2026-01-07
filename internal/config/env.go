@@ -59,16 +59,10 @@ func ApplyEnvOverrides(cfg *Config) error {
 
 // applyBasicEnv consolidates basic fields and boolean env parsing
 func applyBasicEnv(cfg *Config) error {
-	if v := os.Getenv("DOCKHAND_POLL_INTERVAL"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return fmt.Errorf("invalid DOCKHAND_POLL_INTERVAL: %w", err)
-		}
-		cfg.PollInterval = d
+	if err := setDurationEnv("DOCKHAND_POLL_INTERVAL", func(d time.Duration) { cfg.PollInterval = d }); err != nil {
+		return err
 	}
-	if v := os.Getenv("DOCKHAND_PATCH_WINDOW"); v != "" {
-		cfg.PatchWindow = v
-	}
+	setStringEnv("DOCKHAND_PATCH_WINDOW", func(s string) { cfg.PatchWindow = s })
 
 	if err := setBoolEnv("DOCKHAND_MANAGE_LATEST_ONLY", func(b bool) { cfg.ManageLatestOnly = b }); err != nil {
 		return err
@@ -133,37 +127,23 @@ func applyPushNotifications(cfg *Config) error {
 }
 
 func applyRuntimeFlags(cfg *Config) error {
-	if v := os.Getenv("DOCKHAND_NOTIFICATION_LEVEL"); v != "" {
-		cfg.NotificationLevel = v
+	setStringEnv("DOCKHAND_NOTIFICATION_LEVEL", func(s string) { cfg.NotificationLevel = s })
+	if err := setIntEnv("DOCKHAND_CIRCUIT_BREAKER_THRESHOLD", func(n int) { cfg.CircuitBreakerThreshold = n }); err != nil {
+		return err
 	}
-	if v := os.Getenv("DOCKHAND_CIRCUIT_BREAKER_THRESHOLD"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("invalid DOCKHAND_CIRCUIT_BREAKER_THRESHOLD: %w", err)
-		}
-		cfg.CircuitBreakerThreshold = n
+	if err := setDurationEnv("DOCKHAND_CIRCUIT_BREAKER_COOLDOWN", func(d time.Duration) { cfg.CircuitBreakerCooldown = d }); err != nil {
+		return err
 	}
-	if v := os.Getenv("DOCKHAND_CIRCUIT_BREAKER_COOLDOWN"); v != "" {
-		dur, err := time.ParseDuration(v)
-		if err != nil {
-			return fmt.Errorf("invalid DOCKHAND_CIRCUIT_BREAKER_COOLDOWN: %w", err)
-		}
-		cfg.CircuitBreakerCooldown = dur
-	}
-	if v := os.Getenv("DOCKHAND_HOST_SOCKET_PATH"); v != "" {
-		cfg.HostSocketPath = v
-	}
+	setStringEnv("DOCKHAND_HOST_SOCKET_PATH", func(s string) { cfg.HostSocketPath = s })
 	if err := setBoolEnv("DOCKHAND_PIN_DIGESTS", func(b bool) { cfg.PinDigests = b }); err != nil {
 		return err
 	}
-	if v := os.Getenv("DOCKHAND_MAX_CONCURRENT_UPDATES"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("invalid DOCKHAND_MAX_CONCURRENT_UPDATES: %w", err)
-		}
+	if err := setIntEnv("DOCKHAND_MAX_CONCURRENT_UPDATES", func(n int) {
 		if n > 0 {
 			cfg.MaxConcurrentUpdates = n
 		}
+	}); err != nil {
+		return err
 	}
 	return nil
 }
@@ -182,39 +162,48 @@ func setBoolEnv(env string, setter func(bool)) error {
 
 // applyNotificationEnv consolidates notification-related env parsing
 func applyNotificationEnv(cfg *Config) error {
-	if v := os.Getenv("DOCKHAND_DISCORD_WEBHOOK"); v != "" {
-		cfg.DiscordWebhook = v
+	setStringEnv("DOCKHAND_DISCORD_WEBHOOK", func(s string) { cfg.DiscordWebhook = s })
+	setStringEnv("DOCKHAND_SLACK_WEBHOOK", func(s string) { cfg.SlackWebhook = s })
+	setStringEnv("DOCKHAND_TEAMS_WEBHOOK", func(s string) { cfg.TeamsWebhook = s })
+	setStringEnv("DOCKHAND_TELEGRAM_TOKEN", func(s string) { cfg.TelegramToken = s })
+	setStringEnv("DOCKHAND_TELEGRAM_CHAT_ID", func(s string) { cfg.TelegramChatID = s })
+	setStringEnv("DOCKHAND_MASTODON_SERVER", func(s string) { cfg.MastodonServer = s })
+	setStringEnv("DOCKHAND_MASTODON_TOKEN", func(s string) { cfg.MastodonToken = s })
+	setStringEnv("DOCKHAND_GENERIC_WEBHOOK_URL", func(s string) { cfg.GenericWebhookURL = s })
+	setStringEnv("DOCKHAND_APPRISE_URL", func(s string) { cfg.AppriseURL = s })
+	if err := setDurationEnv("DOCKHAND_HOOK_TIMEOUT", func(d time.Duration) { cfg.HookTimeout = d }); err != nil {
+		return err
 	}
-	if v := os.Getenv("DOCKHAND_SLACK_WEBHOOK"); v != "" {
-		cfg.SlackWebhook = v
+	return nil
+}
+
+// setStringEnv assigns an environment variable string to a setter if non-empty
+func setStringEnv(env string, setter func(string)) {
+	if v := os.Getenv(env); v != "" {
+		setter(v)
 	}
-	if v := os.Getenv("DOCKHAND_TEAMS_WEBHOOK"); v != "" {
-		cfg.TeamsWebhook = v
-	}
-	if v := os.Getenv("DOCKHAND_TELEGRAM_TOKEN"); v != "" {
-		cfg.TelegramToken = v
-	}
-	if v := os.Getenv("DOCKHAND_TELEGRAM_CHAT_ID"); v != "" {
-		cfg.TelegramChatID = v
-	}
-	if v := os.Getenv("DOCKHAND_MASTODON_SERVER"); v != "" {
-		cfg.MastodonServer = v
-	}
-	if v := os.Getenv("DOCKHAND_MASTODON_TOKEN"); v != "" {
-		cfg.MastodonToken = v
-	}
-	if v := os.Getenv("DOCKHAND_GENERIC_WEBHOOK_URL"); v != "" {
-		cfg.GenericWebhookURL = v
-	}
-	if v := os.Getenv("DOCKHAND_APPRISE_URL"); v != "" {
-		cfg.AppriseURL = v
-	}
-	if v := os.Getenv("DOCKHAND_HOOK_TIMEOUT"); v != "" {
-		dur, err := time.ParseDuration(v)
+}
+
+// setDurationEnv parses a duration env var and assigns it via setter if present
+func setDurationEnv(env string, setter func(time.Duration)) error {
+	if v := os.Getenv(env); v != "" {
+		d, err := time.ParseDuration(v)
 		if err != nil {
-			return fmt.Errorf("invalid DOCKHAND_HOOK_TIMEOUT: %w", err)
+			return fmt.Errorf("invalid %s: %w", env, err)
 		}
-		cfg.HookTimeout = dur
+		setter(d)
+	}
+	return nil
+}
+
+// setIntEnv parses an int env var and assigns it via setter if present
+func setIntEnv(env string, setter func(int)) error {
+	if v := os.Getenv(env); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid %s: %w", env, err)
+		}
+		setter(n)
 	}
 	return nil
 }
