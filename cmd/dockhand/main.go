@@ -162,8 +162,19 @@ func initMetricsAndInflux(cfg *config.Config) {
 			mux.Handle("/metrics", metrics.PromHandler())
 			mux.Handle("/status", metrics.JSONHandler())
 			addr := fmt.Sprintf(":%d", cfg.MetricsPort)
-			logging.Get().Info().Str("addr", addr).Msg("starting metrics server")
-			_ = http.ListenAndServe(addr, mux)
+			cert := os.Getenv("DOCKHAND_METRICS_TLS_CERT")
+			key := os.Getenv("DOCKHAND_METRICS_TLS_KEY")
+			if cert != "" && key != "" {
+				logging.Get().Info().Str("addr", addr).Msg("starting metrics server with TLS")
+				if err := http.ListenAndServeTLS(addr, cert, key, mux); err != nil {
+					logging.Get().Fatal().Err(err).Msg("metrics TLS server failed")
+				}
+				return
+			}
+			logging.Get().Warn().Str("addr", addr).Msg("starting metrics server without TLS; consider enabling DOCKHAND_METRICS_TLS_CERT/_KEY or using a TLS terminator")
+			if err := http.ListenAndServe(addr, mux); err != nil {
+				logging.Get().Fatal().Err(err).Msg("metrics server failed")
+			}
 		}()
 	}
 	if cfg.InfluxURL != "" {
