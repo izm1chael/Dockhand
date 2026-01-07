@@ -1,7 +1,7 @@
 # Build Stage
 FROM golang:1.24-alpine AS builder
 
-# Install git and SSL certs (essential for webhooks)
+# Install git and SSL certs (Safety first for go mod download)
 RUN apk add --no-cache git ca-certificates
 
 WORKDIR /app
@@ -12,22 +12,27 @@ RUN go mod download
 
 # Build the binary
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o dockhand ./cmd/dockhand
+# -ldflags="-s -w" strips debug symbols to reduce binary size
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o dockhand ./cmd/dockhand
 
-# Final Stage (Minimal & Secure)
-FROM alpine:3.23.2
+# Prepare the state directory in the builder stage
+# (Distroless has no 'mkdir' or 'chown' commands)
+RUN mkdir -p /state-dir
 
-# Install CA certs and tzdata for timezone support
-RUN apk add --no-cache ca-certificates tzdata
+# Final Stage (Distroless)
+# Use 'static-debian12' (Stable) instead of '13' (Testing)
+FROM gcr.io/distroless/static-debian12
 
 # Copy the binary
 COPY --from=builder /app/dockhand /app/dockhand
 
-# Create a non-root user and prepare filesystem for persistence
-RUN adduser -D -g '' dockhand \
-	&& mkdir -p /var/lib/dockhand \
-	&& mkdir -p /app \
-	&& chown -R dockhand:dockhand /var/lib/dockhand /app
-USER dockhand
+# Copy the empty state directory with correct ownership
+COPY --from=builder --chown=nonroot:nonroot /state-dir /var/lib/dockhand
+
+# Set the environment variable to use this directory
+ENV DOCKHAND_STATE_DIR=/var/lib/dockhand
+
+# Drop root privileges completely
+USER nonroot:nonroot
 
 ENTRYPOINT ["/app/dockhand"]
