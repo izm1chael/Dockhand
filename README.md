@@ -188,6 +188,26 @@ services:
     restart: unless-stopped
 ```
 
+SemVer policy label
+
+You can control semantic-version based updates per-container using the `dockhand.policy` label. When present Dockhand will query the container registry for available tags and pick the best match according to the provided SemVer constraint. This allows pinning to major/minor tracks such as `14.x`.
+
+Example (Docker Compose):
+
+```yaml
+services:
+  postgres:
+    image: postgres:14.1
+    labels:
+      - "dockhand.policy=14.x"  # Keeps on the latest 14.x release (14.2, 14.3, ...)
+```
+
+Notes:
+- The policy value is a SemVer constraint (compatible with Masterminds/semver). Examples: `14.x`, `^14.0`, `>=14.2 <15.0`.
+- Dockhand will skip non-semver tags (for example `latest` or custom channel names) when resolving a SemVer policy.
+- If resolution fails (registry inaccessible or no matching tags) Dockhand will skip updating that container for the current pass and log an error; it will not attempt to apply an incorrect tag.
+- For private registries ensure registry credentials are available to Dockhand (via `DOCKHAND_REGISTRY_USER`/`DOCKHAND_REGISTRY_PASS` or a mounted `~/.docker/config.json`).
+
 > Publishing & pulling images: We publish multi-architecture images (linux/amd64, linux/arm64) to GHCR and Docker Hub as `izm1chael/dockhand`.
 > Pull from Docker Hub with `docker pull izm1chael/dockhand:latest` or GHCR with `docker pull ghcr.io/izm1chael/dockhand:latest`.
 

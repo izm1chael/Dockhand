@@ -14,6 +14,7 @@ import (
 	"github.com/dockhand/dockhand/internal/logging"
 	"github.com/dockhand/dockhand/internal/metrics"
 	"github.com/dockhand/dockhand/internal/notify"
+	"github.com/dockhand/dockhand/internal/semver"
 	"github.com/dockhand/dockhand/internal/state"
 )
 
@@ -27,6 +28,7 @@ type failureInfo struct {
 type Daemon struct {
 	cfg      *config.Config
 	client   docker.Client
+	resolver *semver.Resolver // FIELD ADDED
 	quit     chan struct{}
 	wg       sync.WaitGroup   // tracks active reconciliation passes
 	Now      func() time.Time // injectable clock for testing
@@ -40,7 +42,7 @@ type Daemon struct {
 
 // New creates a daemon with an injected docker client
 func New(cfg *config.Config, client docker.Client) *Daemon {
-	d := &Daemon{cfg: cfg, client: client, quit: make(chan struct{}), Now: time.Now, exitFunc: os.Exit}
+	d := &Daemon{cfg: cfg, client: client, resolver: semver.NewResolver(), quit: make(chan struct{}), Now: time.Now, exitFunc: os.Exit}
 
 	// Initialize notifiers
 	d.initNotifiers()
@@ -258,26 +260,46 @@ func (d *Daemon) handleContainer(ctx context.Context, c docker.Container) bool {
 	if !d.shouldManage(c) {
 		return false
 	}
-	logging.Get().Info().Strs("names", c.Names).Str("id", c.ID).Str("image", c.Image).Msg("considering container")
-	pulledID, err := d.client.PullImage(ctx, c.Image)
+
+	// 1. Determine Target Image (Default to current)
+	targetImage := c.Image
+
+	// 2. Check for SemVer Policy
+	if policy, ok := c.Labels["dockhand.policy"]; ok && policy != "" {
+		logging.Get().Debug().Str("container", c.ID).Str("policy", policy).Msg("resolving semver policy")
+		resolved, err := d.resolver.Resolve(ctx, c.Image, policy)
+		if err != nil {
+			logging.Get().Error().Err(err).Str("container", c.ID).Msg("failed to resolve semver policy")
+			// Skip this pass on resolution failure
+			return false
+		}
+		if resolved != c.Image {
+			logging.Get().Info().Str("container", c.ID).Str("current", c.Image).Str("target", resolved).Msg("semver policy resolved new tag")
+			targetImage = resolved
+		}
+	}
+
+	logging.Get().Info().Strs("names", c.Names).Str("id", c.ID).Str("target", targetImage).Msg("considering container")
+
+	// 3. Pull the Target Image
+	pulledID, err := d.client.PullImage(ctx, targetImage)
 	if err != nil {
-		logging.Get().Error().Err(err).Str("image", c.Image).Str("container", c.ID).Msg("failed pulling image")
+		logging.Get().Error().Err(err).Str("image", targetImage).Str("container", c.ID).Msg("failed pulling image")
 		metrics.IncImagePullFailure()
-		// Circuit breaker: decide whether to notify
-		if d.shouldNotifyPullFailure(c.Image) {
+		if d.shouldNotifyPullFailure(targetImage) {
 			d.notify(ctx, "failure", fmt.Sprintf("Pull failed: %s", c.ID), err.Error())
-		} else {
-			logging.Get().Warn().Str("image", c.Image).Msg("suppressed pull failure notification due to circuit breaker")
 		}
 		metrics.IncUpdateFailed()
 		return false
 	}
-	// success: clear any failure state
-	d.clearPullFailure(c.Image)
+
+	d.clearPullFailure(targetImage)
 	metrics.IncImagePullSuccess()
-	if pulledID != "" && pulledID != c.ImageID {
-		logging.Get().Info().Str("container", c.ID).Str("from", c.ImageID).Str("to", pulledID).Msg("new image detected")
-		if stop := d.processContainer(ctx, c, pulledID); stop {
+
+	// 4. Compare IDs / tags
+	if targetImage != c.Image || (pulledID != "" && pulledID != c.ImageID) {
+		logging.Get().Info().Str("container", c.ID).Str("image_new", targetImage).Msg("update required")
+		if stop := d.processContainer(ctx, c, pulledID, targetImage); stop {
 			return true
 		}
 	}
@@ -285,17 +307,17 @@ func (d *Daemon) handleContainer(ctx context.Context, c docker.Container) bool {
 }
 
 // processContainer handles update logic for a single container. Returns true if the daemon should stop (e.g. when initiating self-update)
-func (d *Daemon) processContainer(ctx context.Context, c docker.Container, pulledID string) bool {
+func (d *Daemon) processContainer(ctx context.Context, c docker.Container, pulledID string, targetImage string) bool {
 	// Self-update protection
 	if d.handleSelfUpdate(ctx, c, pulledID) {
 		return true
 	}
 	// Dry-run
-	if d.handleDryRun(ctx, c, pulledID) {
+	if d.handleDryRun(ctx, c, pulledID, targetImage) {
 		return false
 	}
 	// Perform actual update
-	d.performUpdate(ctx, c, pulledID)
+	d.performUpdate(ctx, c, targetImage)
 	return false
 }
 
@@ -312,23 +334,23 @@ func (d *Daemon) handleSelfUpdate(ctx context.Context, c docker.Container, pulle
 }
 
 // handleDryRun returns true when dry-run handling was performed
-func (d *Daemon) handleDryRun(ctx context.Context, c docker.Container, pulledID string) bool {
+func (d *Daemon) handleDryRun(ctx context.Context, c docker.Container, pulledID string, targetImage string) bool {
 	if !d.cfg.DryRun {
 		return false
 	}
 	logging.Get().Info().Str("container", c.ID).Msg("dry-run mode: update available (skipping recreate)")
-	d.notify(ctx, "info", fmt.Sprintf("Update available (dry-run): %s", c.ID), fmt.Sprintf("image=%s old_image=%s", pulledID, c.ImageID))
+	d.notify(ctx, "info", fmt.Sprintf("Update available (dry-run): %s", c.ID), fmt.Sprintf("new_image=%s (%s) old_image=%s", targetImage, pulledID, c.ImageID))
 	return true
 }
 
 // performUpdate performs RecreateContainer and handles success/failure notifications and cleanup
-func (d *Daemon) performUpdate(ctx context.Context, c docker.Container, pulledID string) {
+func (d *Daemon) performUpdate(ctx context.Context, c docker.Container, targetImage string) {
 	oldImage := c.ImageID
 	opts := docker.RecreateOptions{VerifyTimeout: d.cfg.VerifyTimeout, VerifyInterval: d.cfg.VerifyInterval, HealthcheckCmd: d.cfg.VerifyCommand, HookTimeout: d.cfg.HookTimeout}
 	updateStart := d.Now()
-	if err := d.client.RecreateContainer(ctx, c, c.Image, opts); err != nil {
+	// Use targetImage here instead of c.Image
+	if err := d.client.RecreateContainer(ctx, c, targetImage, opts); err != nil {
 		logging.Get().Error().Err(err).Str("container", c.ID).Msg("failed to update container")
-		// send notification (level: failure)
 		d.notify(ctx, "failure", fmt.Sprintf("Update failed: %s", c.ID), err.Error())
 		metrics.IncUpdateFailed()
 		return
@@ -337,13 +359,12 @@ func (d *Daemon) performUpdate(ctx context.Context, c docker.Container, pulledID
 	metrics.ObserveUpdateDuration(updateDuration)
 	logging.Get().Info().Str("container", c.ID).Float64("duration_seconds", updateDuration).Msg("updated container")
 	metrics.IncUpdate()
-	// notify (level: success)
-	d.notify(ctx, "success", fmt.Sprintf("Container updated: %s", c.ID), fmt.Sprintf("image=%s old_image=%s", pulledID, oldImage))
-	// attempt to remove old image
+
+	d.notify(ctx, "success", fmt.Sprintf("Container updated: %s", c.ID), fmt.Sprintf("image=%s old_image=%s", targetImage, oldImage))
+
 	if oldImage != "" {
 		if err := d.client.RemoveImage(ctx, oldImage); err != nil {
 			logging.Get().Error().Err(err).Str("old_image", oldImage).Msg("failed to remove old image")
-			// notify as warning (cleanup failures are not critical)
 			d.notify(ctx, "warning", fmt.Sprintf("Cleanup failed: %s", c.ID), fmt.Sprintf("old_image=%s err=%v", oldImage, err))
 			metrics.IncCleanupFailed()
 		}
