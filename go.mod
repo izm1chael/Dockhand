@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
-	github.com/docker/docker v25.0.0+incompatible
+	github.com/docker/docker v25.0.13+incompatible
 	github.com/google/go-containerregistry v0.20.2
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/prometheus/client_golang v1.16.0
