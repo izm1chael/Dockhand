@@ -45,7 +45,7 @@ jobs:
 
           # Base tags: latest and commit SHA (use real newlines, not literal \n)
           TAGS="ghcr.io/${REPO_LOWER}:latest
-          docker.io/${REPO_LOWER}:latest
+          docker.io/${REPO_LOWER}:latest"
 
           # If this run is a tag push (e.g., v1.0.0), add the version tag
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
