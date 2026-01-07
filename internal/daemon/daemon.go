@@ -224,11 +224,71 @@ func (d *Daemon) once(ctx context.Context) {
 		logging.Get().Error().Err(err).Msg("failed to list containers")
 		return
 	}
-	for _, c := range containers {
-		if stop := d.handleContainer(ctx, c); stop {
-			return
-		}
+
+	// Determine concurrency limit
+	limit := d.cfg.MaxConcurrentUpdates
+	if limit < 1 {
+		limit = 1
 	}
+
+	// Semaphore to limit concurrency
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+
+	// Channel to signal global stop (e.g. if self-update is triggered)
+	stopCh := make(chan struct{})
+	var stopOnce sync.Once
+	triggerStop := func() {
+		stopOnce.Do(func() {
+			close(stopCh)
+		})
+	}
+
+	// Iterate containers and spawn workers
+	for _, c := range containers {
+		// If a stop signal was received (e.g. self-update triggered), stop spawning
+		select {
+		case <-stopCh:
+			goto WaitAndExit
+		case <-ctx.Done():
+			goto WaitAndExit
+		default:
+		}
+
+		wg.Add(1)
+		go func(c docker.Container) {
+			defer wg.Done()
+
+			// Acquire semaphore (blocks if limit reached)
+			select {
+			case sem <- struct{}{}:
+				// Acquired
+				defer func() { <-sem }() // Release on exit
+			case <-stopCh:
+				// Abort if global stop triggered while waiting
+				return
+			case <-ctx.Done():
+				return
+			}
+
+			// Double-check stop signal after acquiring (in case we waited a while)
+			select {
+			case <-stopCh:
+				return
+			default:
+			}
+
+			// Process container
+			if shouldStop := d.handleContainer(ctx, c); shouldStop {
+				// If handleContainer returns true (self-update), trigger global stop
+				logging.Get().Info().Str("container", c.ID).Msg("self-update triggered; aborting remaining parallel tasks")
+				triggerStop()
+			}
+		}(c)
+	}
+
+WaitAndExit:
+	wg.Wait()
 	// Record last run timestamp for metrics
 	metrics.SetLastRun(d.Now())
 }

@@ -77,6 +77,10 @@ type Config struct {
 	// PinDigests ensures the container is updated to a specific sha256 digest
 	// rather than a mutable tag.
 	PinDigests bool `json:"pin_digests" yaml:"pin_digests"`
+
+	// MaxConcurrentUpdates limits how many containers are processed in parallel.
+	// Default: 1 (sequential). Set to 5-10 for faster updates in large environments.
+	MaxConcurrentUpdates int `json:"max_concurrent_updates" yaml:"max_concurrent_updates"`
 }
 
 // IsWithinPatchWindow returns true when the provided time is inside the configured patch window.
@@ -136,6 +140,9 @@ func DefaultConfig() *Config {
 
 		// By default we do not pin to digests
 		PinDigests: false,
+
+		// By default run sequential updates for safety
+		MaxConcurrentUpdates: 1,
 	}
 }
 

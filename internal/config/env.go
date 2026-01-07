@@ -149,6 +149,15 @@ func applyRuntimeFlags(cfg *Config) error {
 	if err := setBoolEnv("DOCKHAND_PIN_DIGESTS", func(b bool) { cfg.PinDigests = b }); err != nil {
 		return err
 	}
+	if v := os.Getenv("DOCKHAND_MAX_CONCURRENT_UPDATES"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid DOCKHAND_MAX_CONCURRENT_UPDATES: %w", err)
+		}
+		if n > 0 {
+			cfg.MaxConcurrentUpdates = n
+		}
+	}
 	return nil
 }
 
