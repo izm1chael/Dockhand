@@ -28,58 +28,74 @@ func NewResolver() *Resolver {
 // policy: "14.x" or "^14.0"
 // Returns: "postgres:14.5" (if 14.5 is latest)
 func (r *Resolver) Resolve(ctx context.Context, image string, policy string) (string, error) {
-	// 1. Parse the policy constraint
-	constraint, err := mvc.NewConstraint(policy)
+	constraint, err := parseConstraint(policy)
 	if err != nil {
-		return "", fmt.Errorf("invalid semver policy %q: %w", policy, err)
+		return "", err
 	}
 
-	// 2. Parse the repository name
+	repo, err := parseRepo(image)
+	if err != nil {
+		return "", err
+	}
+
+	tags, err := listTags(ctx, repo, r.keychain)
+	if err != nil {
+		return "", err
+	}
+
+	tag, err := selectHighestTag(tags, constraint)
+	if err != nil {
+		return "", fmt.Errorf("no tags found matching policy %q for %s", policy, repo.Name())
+	}
+
+	return fmt.Sprintf("%s:%s", repo.Name(), tag), nil
+}
+
+func parseConstraint(policy string) (*mvc.Constraints, error) {
+	c, err := mvc.NewConstraint(policy)
+	if err != nil {
+		return nil, fmt.Errorf("invalid semver policy %q: %w", policy, err)
+	}
+	return c, nil
+}
+
+func parseRepo(image string) (name.Repository, error) {
 	ref, err := name.ParseReference(image)
 	if err != nil {
-		return "", fmt.Errorf("invalid image reference %q: %w", image, err)
+		return name.Repository{}, fmt.Errorf("invalid image reference %q: %w", image, err)
 	}
-	repo := ref.Context()
+	return ref.Context(), nil
+}
 
-	// 3. List all tags from the registry
-	// Note: We use the context to allow timeouts/cancellations
-	tags, err := remote.List(repo, remote.WithAuthFromKeychain(r.keychain), remote.WithContext(ctx))
+func listTags(ctx context.Context, repo name.Repository, keychain authn.Keychain) ([]string, error) {
+	tags, err := remote.List(repo, remote.WithAuthFromKeychain(keychain), remote.WithContext(ctx))
 	if err != nil {
-		return "", fmt.Errorf("failed to list tags for %s: %w", repo.Name(), err)
+		return nil, fmt.Errorf("failed to list tags for %s: %w", repo.Name(), err)
 	}
+	return tags, nil
+}
 
-	// 4. Filter and sort tags
+func selectHighestTag(tags []string, constraint *mvc.Constraints) (string, error) {
 	var versions []*mvc.Version
-	// Keep a map to look up the original tag string from the version object
-	// (preserves 'v' prefix if present)
 	originalTags := make(map[string]string)
-
 	for _, t := range tags {
 		v, err := mvc.NewVersion(t)
 		if err != nil {
-			continue // skip non-semver tags (e.g. "latest", "alpine")
+			continue
 		}
 		if constraint.Check(v) {
 			versions = append(versions, v)
 			originalTags[v.Original()] = t
 		}
 	}
-
 	if len(versions) == 0 {
-		return "", fmt.Errorf("no tags found matching policy %q for %s", policy, repo.Name())
+		return "", fmt.Errorf("no matching versions")
 	}
-
-	// Sort to find the highest version
 	sort.Sort(mvc.Collection(versions))
 	highest := versions[len(versions)-1]
-
-	// Reconstruct the full image reference
-	// We use originalTags to respect the registry's exact formatting (e.g. v1.0 vs 1.0)
 	tag := originalTags[highest.Original()]
-	// Handle the case where semver.Original() might differ slightly if parsed/reformatted
 	if tag == "" {
 		tag = highest.Original()
 	}
-
-	return fmt.Sprintf("%s:%s", repo.Name(), tag), nil
+	return tag, nil
 }
