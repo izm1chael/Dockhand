@@ -23,7 +23,7 @@ RUN mkdir -p /state-dir
 
 # Final Stage (Distroless)
 # Use 'static-debian12' (Stable) instead of '13' (Testing)
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian12:nonroot
 
 # Copy the binary
 COPY --from=builder /app/dockhand /app/dockhand
