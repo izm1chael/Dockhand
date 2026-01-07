@@ -3,7 +3,7 @@ module github.com/dockhand/dockhand
 go 1.23
 
 require (
-	github.com/docker/docker v25.0.0+incompatible
+	github.com/docker/docker v25.0.13+incompatible
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/prometheus/client_golang v1.16.0
 	github.com/rs/zerolog v1.34.0
