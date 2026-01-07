@@ -42,16 +42,16 @@ jobs:
         run: |
           # Base tags: latest and commit SHA (use real newlines, not literal \n)
           TAGS="ghcr.io/${GITHUB_REPOSITORY}:latest
-ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}
-docker.io/${GITHUB_REPOSITORY}:latest
-docker.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}"
+          ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}
+          docker.io/${GITHUB_REPOSITORY}:latest
+          docker.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}"
 
           # If this run is a tag push (e.g., v1.0.0), add the version tag
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION=${GITHUB_REF##refs/tags/}
             TAGS="$TAGS
-ghcr.io/${GITHUB_REPOSITORY}:${VERSION}
-docker.io/${GITHUB_REPOSITORY}:${VERSION}"
+          ghcr.io/${GITHUB_REPOSITORY}:${VERSION}
+          docker.io/${GITHUB_REPOSITORY}:${VERSION}"
           fi
 
           # Output as multi-line output to be consumed by the build step
