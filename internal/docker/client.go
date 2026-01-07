@@ -16,6 +16,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	containertypes "github.com/docker/docker/api/types/container"
+	imageapi "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/dockhand/dockhand/internal/state"
@@ -90,18 +91,18 @@ type Client interface {
 
 // sdkClient is the production implementation using the official Docker SDK
 type dockerAPI interface {
-	ImagePull(ctx context.Context, refStr string, options types.ImagePullOptions) (io.ReadCloser, error)
+	ImagePull(ctx context.Context, refStr string, options imageapi.PullOptions) (io.ReadCloser, error)
 	ImageInspectWithRaw(ctx context.Context, image string) (types.ImageInspect, []byte, error)
 	ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error)
 	ContainerRename(ctx context.Context, containerID, newName string) error
 	ContainerCreate(ctx context.Context, config *containertypes.Config, hostConfig *containertypes.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (containertypes.CreateResponse, error)
-	ContainerStart(ctx context.Context, containerID string, options types.ContainerStartOptions) error
-	ContainerRemove(ctx context.Context, containerID string, options types.ContainerRemoveOptions) error
-	ContainerExecCreate(ctx context.Context, container string, config types.ExecConfig) (types.IDResponse, error)
-	ContainerExecStart(ctx context.Context, execID string, config types.ExecStartCheck) error
-	ContainerExecInspect(ctx context.Context, execID string) (types.ContainerExecInspect, error)
-	ContainerList(ctx context.Context, options types.ContainerListOptions) ([]types.Container, error)
-	ImageRemove(ctx context.Context, image string, options types.ImageRemoveOptions) ([]types.ImageDeleteResponseItem, error)
+	ContainerStart(ctx context.Context, containerID string, options containertypes.StartOptions) error
+	ContainerRemove(ctx context.Context, containerID string, options containertypes.RemoveOptions) error
+	ContainerExecCreate(ctx context.Context, container string, config containertypes.ExecOptions) (containertypes.ExecCreateResponse, error)
+	ContainerExecStart(ctx context.Context, execID string, config containertypes.ExecStartOptions) error
+	ContainerExecInspect(ctx context.Context, execID string) (containertypes.ExecInspect, error)
+	ContainerList(ctx context.Context, options containertypes.ListOptions) ([]types.Container, error)
+	ImageRemove(ctx context.Context, image string, options imageapi.RemoveOptions) ([]imageapi.DeleteResponse, error)
 }
 
 type sdkClient struct {
@@ -119,7 +120,7 @@ func (s *sdkClient) SpawnWorker(ctx context.Context, image string, cmd []string,
 	if err != nil {
 		return "", fmt.Errorf("create worker: %w", err)
 	}
-	if err := s.cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+	if err := s.cli.ContainerStart(ctx, resp.ID, containertypes.StartOptions{}); err != nil {
 		return "", fmt.Errorf("start worker: %w", err)
 	}
 	return resp.ID, nil
@@ -152,7 +153,7 @@ func (s *sdkClient) ReplaceContainer(ctx context.Context, targetID, newImage str
 	origName := strings.TrimPrefix(insp.Name, "/")
 	origName = s.sanitizeName(origName)
 	// Remove target (force to ensure it is gone)
-	_ = s.cli.ContainerRemove(ctx, targetID, types.ContainerRemoveOptions{Force: true})
+	_ = s.cli.ContainerRemove(ctx, targetID, containertypes.RemoveOptions{Force: true})
 	// Prepare new container config using original config but new image
 	newCfg := insp.Config
 	if newCfg == nil {
@@ -168,7 +169,7 @@ func (s *sdkClient) ReplaceContainer(ctx context.Context, targetID, newImage str
 	if err != nil {
 		return fmt.Errorf("create replaced container: %w", err)
 	}
-	if err := s.cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+	if err := s.cli.ContainerStart(ctx, resp.ID, containertypes.StartOptions{}); err != nil {
 		return fmt.Errorf("start replaced container: %w", err)
 	}
 	return nil
@@ -226,7 +227,7 @@ func NewClientForHost(host, user, pass string, sanitize bool) (Client, error) {
 }
 
 func (s *sdkClient) ListRunningContainers(ctx context.Context) ([]Container, error) {
-	list, err := s.cli.ContainerList(ctx, types.ContainerListOptions{All: false})
+	list, err := s.cli.ContainerList(ctx, containertypes.ListOptions{All: false})
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +245,7 @@ func (s *sdkClient) ListRunningContainers(ctx context.Context) ([]Container, err
 }
 
 func (s *sdkClient) ListAllContainers(ctx context.Context) ([]Container, error) {
-	list, err := s.cli.ContainerList(ctx, types.ContainerListOptions{All: true})
+	list, err := s.cli.ContainerList(ctx, containertypes.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +268,7 @@ func (s *sdkClient) RenameContainer(ctx context.Context, containerID, newName st
 
 func (s *sdkClient) PullImage(ctx context.Context, img string) (string, string, error) {
 	logging.Get().Info().Str("image", img).Msg("pulling image")
-	opts := types.ImagePullOptions{}
+	opts := imageapi.PullOptions{}
 	if s.registryAuth != "" {
 		opts.RegistryAuth = s.registryAuth
 	}
@@ -343,12 +344,12 @@ func (s *sdkClient) RecreateContainer(ctx context.Context, ctn Container, newIma
 func (s *sdkClient) runPreUpdateHook(ctx context.Context, ctn Container, timeout time.Duration) error {
 	if cmdStr, ok := ctn.Labels["dockhand.pre-update"]; ok && cmdStr != "" {
 		logging.Get().Info().Str("container", ctn.ID).Msg("running pre-update hook inside container")
-		execResp, err := s.cli.ContainerExecCreate(ctx, ctn.ID, types.ExecConfig{Cmd: []string{"sh", "-c", cmdStr}})
+		execResp, err := s.cli.ContainerExecCreate(ctx, ctn.ID, containertypes.ExecOptions{Cmd: []string{"sh", "-c", cmdStr}})
 		if err != nil {
 			logging.Get().Error().Err(err).Msg("pre-update exec create failed; aborting update")
 			return fmt.Errorf("pre-update exec create: %w", err)
 		}
-		_ = s.cli.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{})
+		_ = s.cli.ContainerExecStart(ctx, execResp.ID, containertypes.ExecStartOptions{})
 		// Use default timeout if not provided
 		if timeout <= 0 {
 			timeout = defaultExecTimeout
@@ -566,13 +567,13 @@ func (s *sdkClient) rollbackOnInspectFailure(ctx context.Context, newID string, 
 
 // runHealthcheckExec runs an exec-based healthcheck inside the new container and performs rollback on failure
 func (s *sdkClient) runHealthcheckExec(ctx context.Context, newID string, cmd []string, deadline time.Time, insp types.ContainerJSON, origName string, interval time.Duration) error {
-	execResp, err := s.cli.ContainerExecCreate(ctx, newID, types.ExecConfig{Cmd: cmd})
+	execResp, err := s.cli.ContainerExecCreate(ctx, newID, containertypes.ExecOptions{Cmd: cmd})
 	if err != nil {
 		logging.Get().Error().Err(err).Msg("exec create failed; rolling back")
 		return s.rollbackRestore(ctx, newID, insp, origName)
 	}
 	logging.Get().Info().Str("exec", execResp.ID).Msg("starting exec")
-	_ = s.cli.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{})
+	_ = s.cli.ContainerExecStart(ctx, execResp.ID, containertypes.ExecStartOptions{})
 	for time.Now().Before(deadline) {
 		if ctx.Err() != nil {
 			return fmt.Errorf("healthcheck canceled: %w", ctx.Err())
@@ -754,7 +755,7 @@ func (s *sdkClient) buildHTTPCheck(ctx context.Context, target, ip string) (func
 }
 func (s *sdkClient) RemoveImage(ctx context.Context, imageID string) error {
 	logging.Get().Info().Str("image", imageID).Msg("removing image")
-	_, err := s.cli.ImageRemove(ctx, imageID, types.ImageRemoveOptions{Force: false, PruneChildren: false})
+	_, err := s.cli.ImageRemove(ctx, imageID, imageapi.RemoveOptions{Force: false, PruneChildren: false})
 	if err != nil {
 		logging.Get().Error().Err(err).Str("image", imageID).Msg("failed removing image")
 		return fmt.Errorf("remove image %s: %w", imageID, err)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	containertypes "github.com/docker/docker/api/types/container"
+	imageapi "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/dockhand/dockhand/internal/state"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -28,13 +29,13 @@ type fakeDockerAPI struct {
 	started       []string
 	removed       []string
 	removedImages []string
-	execInspects  map[string]types.ContainerExecInspect
+	execInspects  map[string]containertypes.ExecInspect
 	list          []types.Container
 	// inspectNames allows tests to specify the Name returned for a container ID
 	inspectNames map[string]string
 }
 
-func (f *fakeDockerAPI) ImagePull(ctx context.Context, refStr string, options types.ImagePullOptions) (io.ReadCloser, error) {
+func (f *fakeDockerAPI) ImagePull(ctx context.Context, refStr string, options imageapi.PullOptions) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
 
@@ -71,39 +72,39 @@ func (f *fakeDockerAPI) ContainerCreate(ctx context.Context, config *containerty
 	return containertypes.CreateResponse{ID: f.createdID}, nil
 }
 
-func (f *fakeDockerAPI) ContainerStart(ctx context.Context, containerID string, options types.ContainerStartOptions) error {
+func (f *fakeDockerAPI) ContainerStart(ctx context.Context, containerID string, options containertypes.StartOptions) error {
 	f.started = append(f.started, containerID)
 	return nil
 }
 
-func (f *fakeDockerAPI) ContainerRemove(ctx context.Context, containerID string, options types.ContainerRemoveOptions) error {
+func (f *fakeDockerAPI) ContainerRemove(ctx context.Context, containerID string, options containertypes.RemoveOptions) error {
 	f.removed = append(f.removed, containerID)
 	return nil
 }
 
-func (f *fakeDockerAPI) ContainerList(ctx context.Context, options types.ContainerListOptions) ([]types.Container, error) {
+func (f *fakeDockerAPI) ContainerList(ctx context.Context, options containertypes.ListOptions) ([]types.Container, error) {
 	return f.list, nil
 }
 
-func (f *fakeDockerAPI) ImageRemove(ctx context.Context, image string, options types.ImageRemoveOptions) ([]types.ImageDeleteResponseItem, error) {
+func (f *fakeDockerAPI) ImageRemove(ctx context.Context, image string, options imageapi.RemoveOptions) ([]imageapi.DeleteResponse, error) {
 	f.removedImages = append(f.removedImages, image)
 	return nil, nil
 }
 
-func (f *fakeDockerAPI) ContainerExecCreate(ctx context.Context, container string, config types.ExecConfig) (types.IDResponse, error) {
-	return types.IDResponse{ID: "exec1"}, nil
+func (f *fakeDockerAPI) ContainerExecCreate(ctx context.Context, container string, config containertypes.ExecOptions) (containertypes.ExecCreateResponse, error) {
+	return containertypes.ExecCreateResponse{ID: "exec1"}, nil
 }
 
-func (f *fakeDockerAPI) ContainerExecStart(ctx context.Context, execID string, config types.ExecStartCheck) error {
+func (f *fakeDockerAPI) ContainerExecStart(ctx context.Context, execID string, config containertypes.ExecStartOptions) error {
 	// no-op
 	return nil
 }
 
-func (f *fakeDockerAPI) ContainerExecInspect(ctx context.Context, execID string) (types.ContainerExecInspect, error) {
+func (f *fakeDockerAPI) ContainerExecInspect(ctx context.Context, execID string) (containertypes.ExecInspect, error) {
 	if v, ok := f.execInspects[execID]; ok {
 		return v, nil
 	}
-	return types.ContainerExecInspect{ExitCode: 1}, nil
+	return containertypes.ExecInspect{ExitCode: 1}, nil
 }
 
 // createFail simulates a failure during container creation
@@ -116,7 +117,7 @@ func (f *createFail) ContainerCreate(ctx context.Context, config *containertypes
 // removeFail simulates a failure when attempting to remove a specific container
 type removeFail struct{ fakeDockerAPI }
 
-func (f *removeFail) ContainerRemove(ctx context.Context, containerID string, options types.ContainerRemoveOptions) error {
+func (f *removeFail) ContainerRemove(ctx context.Context, containerID string, options containertypes.RemoveOptions) error {
 	f.removed = append(f.removed, containerID)
 	if containerID == testOldID {
 		return fmt.Errorf("remove failed")
@@ -127,7 +128,7 @@ func (f *removeFail) ContainerRemove(ctx context.Context, containerID string, op
 // The real client has many more methods; we only implement the subset we need for tests.
 
 func TestRecreateWithExecHealthcheckSuccess(t *testing.T) {
-	fake := &fakeDockerAPI{execInspects: map[string]types.ContainerExecInspect{"exec1": {ExitCode: 0, Running: false}}}
+	fake := &fakeDockerAPI{execInspects: map[string]containertypes.ExecInspect{"exec1": {ExitCode: 0, Running: false}}}
 	s := &sdkClient{cli: fake}
 	ctx := context.Background()
 	opts := RecreateOptions{VerifyTimeout: 5 * time.Second, VerifyInterval: 100 * time.Millisecond, HealthcheckCmd: []string{"/bin/true"}}
@@ -174,7 +175,7 @@ func TestRemoveOldFailureDoesNotCauseRecreateFailure(t *testing.T) {
 	t.Setenv("DOCKHAND_STATE_DIR", t.TempDir())
 	// fake that fails ContainerRemove for the old ID
 	f := &removeFail{}
-	f.execInspects = map[string]types.ContainerExecInspect{"exec1": {ExitCode: 0, Running: false}}
+	f.execInspects = map[string]containertypes.ExecInspect{"exec1": {ExitCode: 0, Running: false}}
 	s := &sdkClient{cli: f}
 	ctx := context.Background()
 	opts := RecreateOptions{VerifyTimeout: 2 * time.Second, VerifyInterval: 100 * time.Millisecond, HealthcheckCmd: []string{"/bin/true"}}
@@ -195,7 +196,7 @@ func TestRemoveOldFailureDoesNotCauseRecreateFailure(t *testing.T) {
 }
 
 func TestRecreateWithExecHealthcheckFailureRollsBack(t *testing.T) {
-	fake := &fakeDockerAPI{execInspects: map[string]types.ContainerExecInspect{"exec1": {ExitCode: 1, Running: false}}}
+	fake := &fakeDockerAPI{execInspects: map[string]containertypes.ExecInspect{"exec1": {ExitCode: 1, Running: false}}}
 	s := &sdkClient{cli: fake}
 	ctx := context.Background()
 	opts := RecreateOptions{VerifyTimeout: 1 * time.Second, VerifyInterval: 100 * time.Millisecond, HealthcheckCmd: []string{"/bin/false"}}
@@ -217,7 +218,7 @@ func TestRecreateWithExecHealthcheckFailureRollsBack(t *testing.T) {
 
 func TestPreUpdateHookTimeout(t *testing.T) {
 	// Exec never completes (always running) -> should timeout and cause RecreateContainer to fail
-	fake := &fakeDockerAPI{execInspects: map[string]types.ContainerExecInspect{"exec1": {ExitCode: 1, Running: true}}}
+	fake := &fakeDockerAPI{execInspects: map[string]containertypes.ExecInspect{"exec1": {ExitCode: 1, Running: true}}}
 	s := &sdkClient{cli: fake}
 	ctx := context.Background()
 	opts := RecreateOptions{VerifyTimeout: 1 * time.Second, VerifyInterval: 100 * time.Millisecond, HookTimeout: 100 * time.Millisecond}

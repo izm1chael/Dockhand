@@ -493,22 +493,23 @@ func (d *Daemon) isSelfContainer(c docker.Container) bool {
 // returns true when a notification should be sent (first failure and after cooldown).
 func (d *Daemon) shouldNotifyPullFailure(image string) bool {
 	now := d.Now()
+	d.cbMu.Lock()
 	if d.pullFailures == nil {
 		d.pullFailures = make(map[string]*failureInfo)
 	}
-	d.cbMu.Lock()
-	defer d.cbMu.Unlock()
 	fi, ok := d.pullFailures[image]
 	if !ok {
 		fi = &failureInfo{count: 1, lastFailureAt: now}
 		d.pullFailures[image] = fi
 		// first failure -> notify
+		d.cbMu.Unlock()
 		return true
 	}
 	// if currently suppressed and cooldown hasn't elapsed, keep suppressing
 	if fi.suppressedUntil.After(now) {
 		fi.count++
 		fi.lastFailureAt = now
+		d.cbMu.Unlock()
 		return false
 	}
 	// if cooldown elapsed, reset count
@@ -516,6 +517,7 @@ func (d *Daemon) shouldNotifyPullFailure(image string) bool {
 		fi.count = 1
 		fi.lastFailureAt = now
 		fi.suppressedUntil = time.Time{}
+		d.cbMu.Unlock()
 		return true
 	}
 	fi.count++
@@ -523,8 +525,10 @@ func (d *Daemon) shouldNotifyPullFailure(image string) bool {
 	// if threshold exceeded, suppress for cooldown (allow notifications up to threshold)
 	if d.cfg.CircuitBreakerThreshold > 0 && fi.count > d.cfg.CircuitBreakerThreshold {
 		fi.suppressedUntil = now.Add(d.cfg.CircuitBreakerCooldown)
+		d.cbMu.Unlock()
 		return false
 	}
+	d.cbMu.Unlock()
 	return true
 }
 
