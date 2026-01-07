@@ -42,6 +42,18 @@ func stateFilePath() string {
 // loadAll reads state file WITHOUT acquiring the package mutex. Caller must hold the lock if concurrent access is possible.
 func loadAllUnlocked() (map[string]RenameRecord, error) {
 	p := stateFilePath()
+	// Sanitize and validate the produced path to avoid path traversal or unexpected filenames.
+	p = filepath.Clean(p)
+	if filepath.Base(p) != stateFileName {
+		return nil, fmt.Errorf("invalid state file path")
+	}
+	if !filepath.IsAbs(p) {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return nil, fmt.Errorf("resolve state file path: %w", err)
+		}
+		p = abs
+	}
 	data, err := os.ReadFile(p)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -59,6 +71,18 @@ func loadAllUnlocked() (map[string]RenameRecord, error) {
 // saveAll writes state file WITHOUT acquiring the package mutex. Caller must hold the lock if concurrent access is possible.
 func saveAllUnlocked(m map[string]RenameRecord) error {
 	p := stateFilePath()
+	// Sanitize and validate the produced path
+	p = filepath.Clean(p)
+	if filepath.Base(p) != stateFileName {
+		return fmt.Errorf("invalid state file path")
+	}
+	if !filepath.IsAbs(p) {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return fmt.Errorf("resolve state file path: %w", err)
+		}
+		p = abs
+	}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal state: %w", err)
