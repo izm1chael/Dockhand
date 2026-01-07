@@ -73,6 +73,10 @@ type Config struct {
 	// HostSocketPath is the path to the Docker socket on the host machine.
 	// Used by the self-update worker to mount the socket correctly.
 	HostSocketPath string `json:"host_socket_path" yaml:"host_socket_path"`
+
+	// PinDigests ensures the container is updated to a specific sha256 digest
+	// rather than a mutable tag.
+	PinDigests bool `json:"pin_digests" yaml:"pin_digests"`
 }
 
 // IsWithinPatchWindow returns true when the provided time is inside the configured patch window.
@@ -129,6 +133,9 @@ func DefaultConfig() *Config {
 
 		// Default assumes standard Docker installation
 		HostSocketPath: "/var/run/docker.sock",
+
+		// By default we do not pin to digests
+		PinDigests: false,
 	}
 }
 

@@ -84,16 +84,32 @@ func applyBasicEnv(cfg *Config) error {
 
 // applyMiscEnv handles dry-run, registry auth, gotify, pushover, and notification level
 func applyMiscEnv(cfg *Config) error {
+	if err := applyDryRunAndRegistry(cfg); err != nil {
+		return err
+	}
+	if err := applyPushNotifications(cfg); err != nil {
+		return err
+	}
+	if err := applyRuntimeFlags(cfg); err != nil {
+		return err
+	}
+	return nil
+}
+
+func applyDryRunAndRegistry(cfg *Config) error {
 	if v := os.Getenv("DOCKHAND_DRY_RUN"); v == "true" {
 		cfg.DryRun = true
 	}
-
 	if v := os.Getenv("DOCKHAND_REGISTRY_USER"); v != "" {
 		cfg.RegistryUser = v
 	}
 	if v := os.Getenv("DOCKHAND_REGISTRY_PASS"); v != "" {
 		cfg.RegistryPass = v
 	}
+	return nil
+}
+
+func applyPushNotifications(cfg *Config) error {
 	if v := os.Getenv("DOCKHAND_GOTIFY_URL"); v != "" {
 		cfg.GotifyURL = v
 	}
@@ -106,7 +122,10 @@ func applyMiscEnv(cfg *Config) error {
 	if v := os.Getenv("DOCKHAND_PUSHOVER_TOKEN"); v != "" {
 		cfg.PushoverToken = v
 	}
+	return nil
+}
 
+func applyRuntimeFlags(cfg *Config) error {
 	if v := os.Getenv("DOCKHAND_NOTIFICATION_LEVEL"); v != "" {
 		cfg.NotificationLevel = v
 	}
@@ -126,6 +145,9 @@ func applyMiscEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("DOCKHAND_HOST_SOCKET_PATH"); v != "" {
 		cfg.HostSocketPath = v
+	}
+	if err := setBoolEnv("DOCKHAND_PIN_DIGESTS", func(b bool) { cfg.PinDigests = b }); err != nil {
+		return err
 	}
 	return nil
 }

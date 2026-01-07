@@ -263,7 +263,7 @@ func TestPullImage(t *testing.T) {
 	s := &sdkClient{cli: fake}
 	ctx := context.Background()
 
-	imageID, err := s.PullImage(ctx, "test:latest")
+	imageID, repoDigest, err := s.PullImage(ctx, "test:latest")
 	if err != nil {
 		t.Fatalf("PullImage failed: %v", err)
 	}
@@ -271,6 +271,8 @@ func TestPullImage(t *testing.T) {
 	if imageID != "sha256:new" {
 		t.Errorf("expected image ID sha256:new, got %s", imageID)
 	}
+	// fake ImageInspectWithRaw returns no RepoDigests in the test fake, so repoDigest may be empty
+	_ = repoDigest
 }
 
 func TestRemoveImage(t *testing.T) {

@@ -22,7 +22,7 @@ const (
 
 type fakeClient struct {
 	pulledID      string
-	PullImageFunc func(ctx context.Context, image string) (string, error)
+	PullImageFunc func(ctx context.Context, image string) (string, string, error)
 	recreated     int
 	containers    []docker.Container
 	removedImages []string
@@ -91,11 +91,11 @@ func (f *fakeClient) ListAllContainers(ctx context.Context) ([]docker.Container,
 	return f.ListRunningContainers(ctx)
 }
 
-func (f *fakeClient) PullImage(ctx context.Context, image string) (string, error) {
+func (f *fakeClient) PullImage(ctx context.Context, image string) (string, string, error) {
 	if f.PullImageFunc != nil {
 		return f.PullImageFunc(ctx, image)
 	}
-	return f.pulledID, nil
+	return f.pulledID, "", nil
 }
 
 func TestDaemonOnceTriggersRecreateOnNewImage(t *testing.T) {
@@ -347,11 +347,11 @@ func TestStopCancelsInFlightOperations(t *testing.T) {
 	called := make(chan struct{})
 	failedCount := 0
 	fc := &fakeClient{pulledID: ""}
-	fc.PullImageFunc = func(ctx context.Context, image string) (string, error) {
+	fc.PullImageFunc = func(ctx context.Context, image string) (string, string, error) {
 		failedCount++
 		close(called)
 		<-ctx.Done()
-		return "", ctx.Err()
+		return "", "", ctx.Err()
 	}
 
 	cfg := config.DefaultConfig()
@@ -389,8 +389,8 @@ func TestCircuitBreakerSuppressesRepeatedPullFailures(t *testing.T) {
 
 	fc := &fakeClient{}
 	// always fail PullImage
-	fc.PullImageFunc = func(ctx context.Context, image string) (string, error) {
-		return "", fmt.Errorf("pull failed")
+	fc.PullImageFunc = func(ctx context.Context, image string) (string, string, error) {
+		return "", "", fmt.Errorf("pull failed")
 	}
 	cfg := config.DefaultConfig()
 	cfg.PatchWindow = ""

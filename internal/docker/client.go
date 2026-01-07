@@ -69,7 +69,9 @@ type RecreateOptions struct {
 type Client interface {
 	ListRunningContainers(ctx context.Context) ([]Container, error)
 	ListAllContainers(ctx context.Context) ([]Container, error)
-	PullImage(ctx context.Context, image string) (string, error) // returns image ID
+	// PullImage pulls the image and returns the ImageID (for comparison)
+	// and the RepoDigest (e.g. "repo@sha256:...") for immutable pinning when available.
+	PullImage(ctx context.Context, image string) (string, string, error)
 	RecreateContainer(ctx context.Context, c Container, newImage string, opts RecreateOptions) error
 	RemoveImage(ctx context.Context, imageID string) error
 	RenameContainer(ctx context.Context, containerID, newName string) error
@@ -236,7 +238,7 @@ func (s *sdkClient) RenameContainer(ctx context.Context, containerID, newName st
 	return s.cli.ContainerRename(ctx, containerID, newName)
 }
 
-func (s *sdkClient) PullImage(ctx context.Context, img string) (string, error) {
+func (s *sdkClient) PullImage(ctx context.Context, img string) (string, string, error) {
 	logging.Get().Info().Str("image", img).Msg("pulling image")
 	opts := types.ImagePullOptions{}
 	if s.registryAuth != "" {
@@ -245,7 +247,7 @@ func (s *sdkClient) PullImage(ctx context.Context, img string) (string, error) {
 	rc, err := s.cli.ImagePull(ctx, img, opts)
 	if err != nil {
 		logging.Get().Error().Err(err).Str("image", img).Msg("image pull failed")
-		return "", fmt.Errorf("image pull %s: %w", img, err)
+		return "", "", fmt.Errorf("image pull %s: %w", img, err)
 	}
 	defer rc.Close()
 	// consume stream to completion
@@ -254,10 +256,15 @@ func (s *sdkClient) PullImage(ctx context.Context, img string) (string, error) {
 	inspected, _, err := s.cli.ImageInspectWithRaw(ctx, img)
 	if err != nil {
 		logging.Get().Error().Err(err).Str("image", img).Msg("inspect image failed")
-		return "", fmt.Errorf("inspect image %s: %w", img, err)
+		return "", "", fmt.Errorf("inspect image %s: %w", img, err)
 	}
-	logging.Get().Info().Str("image", img).Str("id", inspected.ID).Msg("pulled image")
-	return inspected.ID, nil
+	// Determine a repo digest for pinning (if available)
+	repoDigest := ""
+	if len(inspected.RepoDigests) > 0 {
+		repoDigest = inspected.RepoDigests[0]
+	}
+	logging.Get().Info().Str("image", img).Str("id", inspected.ID).Str("digest", repoDigest).Msg("pulled image")
+	return inspected.ID, repoDigest, nil
 }
 
 func (s *sdkClient) RecreateContainer(ctx context.Context, ctn Container, newImage string, opts RecreateOptions) error {

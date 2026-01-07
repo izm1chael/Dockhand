@@ -21,8 +21,8 @@ func (f *fakeClientForRecover) ListRunningContainers(ctx context.Context) ([]doc
 func (f *fakeClientForRecover) ListAllContainers(ctx context.Context) ([]docker.Container, error) {
 	return f.containers, nil
 }
-func (f *fakeClientForRecover) PullImage(ctx context.Context, image string) (string, error) {
-	return "", nil
+func (f *fakeClientForRecover) PullImage(ctx context.Context, image string) (string, string, error) {
+	return "", "", nil
 }
 func (f *fakeClientForRecover) RecreateContainer(ctx context.Context, c docker.Container, newImage string, opts docker.RecreateOptions) error {
 	return nil

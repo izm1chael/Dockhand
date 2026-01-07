@@ -261,28 +261,51 @@ func (d *Daemon) handleContainer(ctx context.Context, c docker.Container) bool {
 		return false
 	}
 
-	// 1. Determine Target Image (Default to current)
-	targetImage := c.Image
+	// 1. Resolve target image (policy-aware)
+	targetImage, ok := d.resolveTargetImage(ctx, c)
+	if !ok {
+		return false
+	}
 
-	// 2. Check for SemVer Policy
+	logging.Get().Info().Strs("names", c.Names).Str("id", c.ID).Str("target", targetImage).Msg("considering container")
+
+	// 2. Pull and compute run image (may be pinned)
+	pulledID, runImage, err := d.pullAndPin(ctx, targetImage, c)
+	if err != nil {
+		return false
+	}
+
+	// 3. Decide whether to process/update
+	return d.decideAndProcess(ctx, c, targetImage, pulledID, runImage)
+}
+
+// resolveTargetImage applies SemVer policy (if present) and returns the
+// resolved target image. The returned boolean indicates whether processing
+// should continue (false = skip this pass).
+func (d *Daemon) resolveTargetImage(ctx context.Context, c docker.Container) (string, bool) {
+	targetImage := c.Image
 	if policy, ok := c.Labels["dockhand.policy"]; ok && policy != "" {
 		logging.Get().Debug().Str("container", c.ID).Str("policy", policy).Msg("resolving semver policy")
 		resolved, err := d.resolver.Resolve(ctx, c.Image, policy)
 		if err != nil {
 			logging.Get().Error().Err(err).Str("container", c.ID).Msg("failed to resolve semver policy")
 			// Skip this pass on resolution failure
-			return false
+			return "", false
 		}
 		if resolved != c.Image {
 			logging.Get().Info().Str("container", c.ID).Str("current", c.Image).Str("target", resolved).Msg("semver policy resolved new tag")
 			targetImage = resolved
 		}
 	}
+	return targetImage, true
+}
 
-	logging.Get().Info().Strs("names", c.Names).Str("id", c.ID).Str("target", targetImage).Msg("considering container")
-
-	// 3. Pull the Target Image
-	pulledID, err := d.client.PullImage(ctx, targetImage)
+// pullAndPin pulls the target image and returns the pulled image ID and the
+// actual runImage (which may be the repo digest if pinning is enabled).
+// On error it logs, notifies if appropriate, increments metrics, and
+// returns an error.
+func (d *Daemon) pullAndPin(ctx context.Context, targetImage string, c docker.Container) (string, string, error) {
+	pulledID, repoDigest, err := d.client.PullImage(ctx, targetImage)
 	if err != nil {
 		logging.Get().Error().Err(err).Str("image", targetImage).Str("container", c.ID).Msg("failed pulling image")
 		metrics.IncImagePullFailure()
@@ -290,16 +313,44 @@ func (d *Daemon) handleContainer(ctx context.Context, c docker.Container) bool {
 			d.notify(ctx, "failure", fmt.Sprintf("Pull failed: %s", c.ID), err.Error())
 		}
 		metrics.IncUpdateFailed()
-		return false
+		return "", "", err
 	}
 
 	d.clearPullFailure(targetImage)
 	metrics.IncImagePullSuccess()
 
-	// 4. Compare IDs / tags
+	runImage := targetImage
+	shouldPin := d.cfg.PinDigests
+	if v, ok := c.Labels["dockhand.pin"]; ok {
+		shouldPin = (v == "true")
+	}
+	if shouldPin && repoDigest != "" {
+		runImage = repoDigest
+		logging.Get().Debug().Str("container", c.ID).Str("pinned_digest", runImage).Msg("pinning update to digest")
+	}
+	return pulledID, runImage, nil
+}
+
+// decideAndProcess determines if an update should be applied and triggers processing.
+// Returns true when daemon should stop (e.g., self-update initiated).
+func (d *Daemon) decideAndProcess(ctx context.Context, c docker.Container, targetImage, pulledID, runImage string) bool {
+	// Update when tag changed or digest changed
 	if targetImage != c.Image || (pulledID != "" && pulledID != c.ImageID) {
-		logging.Get().Info().Str("container", c.ID).Str("image_new", targetImage).Msg("update required")
-		if stop := d.processContainer(ctx, c, pulledID, targetImage); stop {
+		logging.Get().Info().Str("container", c.ID).Str("image_new", runImage).Msg("update required")
+		if stop := d.processContainer(ctx, c, pulledID, runImage); stop {
+			return true
+		}
+		return false
+	}
+
+	// Edge case: apply pin even if content unchanged
+	shouldPin := d.cfg.PinDigests
+	if v, ok := c.Labels["dockhand.pin"]; ok {
+		shouldPin = (v == "true")
+	}
+	if runImage != c.Image && shouldPin {
+		logging.Get().Info().Str("container", c.ID).Str("image_new", runImage).Msg("content unchanged, but applying digest pin")
+		if stop := d.processContainer(ctx, c, pulledID, runImage); stop {
 			return true
 		}
 	}
