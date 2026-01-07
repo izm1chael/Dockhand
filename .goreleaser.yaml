@@ -29,7 +29,7 @@ archives:
       {{- .Arch }}
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: checksums.txt
 
 snapshot:
   version_template: "{{ .Tag }}-next"
