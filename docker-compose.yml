@@ -39,11 +39,33 @@ services:
       # - DOCKHAND_DRY_RUN=false
       # - DOCKHAND_REGISTRY_USER=registryuser
       # - DOCKHAND_REGISTRY_PASS=secret
+      # Path to the host Docker socket (when using a bind-mount). Set to /var/run/docker.sock when the
+      # socket is mounted into the container. When using a TLS-protected Docker daemon over TCP,
+      # point this to the TCP URL instead (e.g., tcp://dockerd:2376 or https://dockerd:2376).
+      - DOCKHAND_HOST_SOCKET_PATH=/var/run/docker.sock
 
     volumes:
-      # Mount Docker socket so Dockhand can manage containers
+      # Mounting the host Docker socket into containers exposes the host and is a security risk.
+      # Avoid bind-mounting /var/run/docker.sock when possible. If you must, explicitly set
+      # the socket path via the DOCKHAND_HOST_SOCKET_PATH env var and restrict access.
+      # Mount Docker socket so Dockhand can manage containers. This is required when Dockhand
+      # needs direct access to the host Docker daemon. WARNING: bind-mounting the socket grants
+      # the container equivalent access to the host and can be used for privilege escalation.
       - /var/run/docker.sock:/var/run/docker.sock
-    # Note: access to the Docker socket is required. For improved security consider configuring socket permissions or using a dedicated docker group and non-root runtime.
+
+    # If you must mount the socket, reduce risk by:
+    # - Running the container as a non-root user (`user: 1000`) where practical.
+    # - Dropping unnecessary Linux capabilities: `cap_drop: - ALL` and only add those required.
+    # - Using a Docker API over TLS instead of a socket mount when possible (configure dockerd
+    #   to listen on a TLS-protected TCP socket and provide client certs to Dockhand).
+    # Example (compose comments only):
+    #   user: 1000
+    #   cap_drop:
+    #     - ALL
+    #   cap_add:
+    #     - CHOWN
+    # Note: exposing the Docker socket is insecure. Prefer using the Docker API over TCP
+    # secured with TLS, or run Dockhand with limited permissions and a dedicated service account.
 
     # Map port only if metrics are enabled (uncomment when enabling metrics)
     # ports:
