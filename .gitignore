@@ -1,0 +1,28 @@
+# Binaries
+/bin/
+/pkg/
+# ignore built binary at repo root only (avoid matching folders named 'dockhand')
+/dockhand
+/dockhand.exe
+
+# Build files
+*.exe
+*.dll
+*.so
+*.dylib
+dist/
+
+# Vendor
+/vendor/
+
+# IDE files
+.vscode/
+.idea/
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Snyk Security Extension - AI Rules (auto-generated)
+.github/instructions/snyk_rules.instructions.md

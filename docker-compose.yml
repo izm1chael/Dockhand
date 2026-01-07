@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  dockhand:
+    build: .
+    image: izm1chael/dockhand:latest
+    container_name: dockhand
+    restart: unless-stopped
+    environment:
+      # Poll every 10 minutes (default)
+      - DOCKHAND_POLL_INTERVAL=10m
+      # Patch window: by default this is empty (always-on). To restrict updates to a safe time (e.g., midnight), set:
+      # - DOCKHAND_PATCH_WINDOW=00:00-02:00
+      # Only manage containers with :latest tag
+      - DOCKHAND_MANAGE_LATEST_ONLY=true
+      # Opt-out mode: manage all containers except those with dockhand.disable=true label
+      - DOCKHAND_OPT_OUT=true
+      # Notification level: all, failure, none
+      - DOCKHAND_NOTIFICATION_LEVEL=all
+
+      # --- Metrics (Optional) ---
+      # Metrics are disabled by default (DOCKHAND_METRICS_ENABLED=false). Uncomment to enable the built-in metrics server.
+      # - DOCKHAND_METRICS_ENABLED=true
+      # - DOCKHAND_METRICS_PORT=9090
+
+      # Influx (Optional: push historical metrics to InfluxDB v2)
+      # - DOCKHAND_INFLUX_URL=http://influx:8086
+      # - DOCKHAND_INFLUX_BUCKET=mybucket
+      # - DOCKHAND_INFLUX_ORG=myorg
+      # - DOCKHAND_INFLUX_TOKEN=secret
+
+      # --- Notifications (Add your webhooks) ---
+      # - DOCKHAND_GENERIC_WEBHOOK_URL=https://hooks.example.com/dockhand
+      # - DOCKHAND_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
+      # - DOCKHAND_SLACK_WEBHOOK=https://hooks.slack.com/services/...
+      # - DOCKHAND_APPRISE_URL=https://apprise.example/send
+
+      # Optional: dry-run or private registry auth
+      # - DOCKHAND_DRY_RUN=false
+      # - DOCKHAND_REGISTRY_USER=registryuser
+      # - DOCKHAND_REGISTRY_PASS=secret
+
+    volumes:
+      # Mount Docker socket so Dockhand can manage containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Note: access to the Docker socket is required. For improved security consider configuring socket permissions or using a dedicated docker group and non-root runtime.
+
+    # Map port only if metrics are enabled (uncomment when enabling metrics)
+    # ports:
+    #   - "9090:9090"
+

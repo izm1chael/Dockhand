@@ -1,0 +1,61 @@
+# .goreleaser.yaml
+version: 2
+
+project_name: dockhand
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    binary: dockhand
+    main: ./cmd/dockhand
+
+archives:
+  - format: tar.gz
+    # use zip for windows
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+release:
+  footer: |
+    ## Docker Images
+    
+    Run the following to pull this specific version:
+    
+    ```bash
+    # GitHub Container Registry
+    docker pull ghcr.io/izm1chael/dockhand:{{ .Tag }}
+    
+    # Docker Hub
+    docker pull izm1chael/dockhand:{{ .Tag }}
+    ```
+    
+    ## Quick Start
+    
+    * **[ View Standard docker-compose.yml](https://github.com/izm1chael/dockhand/blob/main/docker-compose.yml)**
+    * **[ View Documentation](https://github.com/izm1chael/dockhand#readme)**
