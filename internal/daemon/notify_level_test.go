@@ -34,12 +34,17 @@ func TestNotificationLevelFiltering(t *testing.T) {
 	d := New(cfg, nil)
 	f := &fakeSvc{}
 	d.notifier = notify.NewMultiNotifier()
-	d.notifier.SetCooldown(0)
+	// FIX: Use a tiny non-zero cooldown. 0 often implies "use default cooldown",
+	// which can suppress immediately-sequential notifications. 1ns effectively
+	// disables the cooldown behavior for fast, sequential tests.
+	d.notifier.SetCooldown(1 * time.Nanosecond)
 	d.notifier.Add(f)
 
 	// default (all)
 	d.cfg.NotificationLevel = "all"
 	d.notify(context.Background(), "success", "S", "ok")
+	// Ensure the tiny cooldown has time to expire on fast machines.
+	time.Sleep(1 * time.Millisecond)
 	d.notify(context.Background(), "failure", "F", "err")
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
@@ -53,7 +58,7 @@ func TestNotificationLevelFiltering(t *testing.T) {
 	// failure only
 	f.calls = nil
 	d.cfg.NotificationLevel = "failure"
-	d.notify(context.Background(), "success", "S", "ok")
+    d.notify(context.Background(), "success", "S", "ok")
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel2()
 	if err := d.notifier.Wait(ctx2); err != nil {
@@ -62,6 +67,9 @@ func TestNotificationLevelFiltering(t *testing.T) {
 	if len(f.calls) != 0 {
 		t.Fatalf("expected 0 calls for 'failure' when sending success, got %d", len(f.calls))
 	}
+	// Small sleep to ensure cooldown doesn't affect the next valid call
+	time.Sleep(1 * time.Millisecond)
+
 	d.notify(context.Background(), "failure", "F", "err")
 	ctx3, cancel3 := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel3()
