@@ -1,7 +1,13 @@
 # Build Stage
+#
+# For reproducible builds pin the base image to a specific digest (sha256).
+# You can override the image at build time with a digest, e.g.:
+#   docker build --build-arg GOLANG_IMAGE=golang@sha256:<digest> .
+# Default uses the tag for local convenience; replace with a digest for CI.
 FROM golang:1.24-alpine AS builder
 
 # Install git and SSL certs (Safety first for go mod download)
+# Versions are parameterized via build args for auditability.
 ARG ALPINE_GIT_VERSION=2.42.0-r0
 ARG ALPINE_CA_CERTS_VERSION=20230829-r0
 RUN apk add --no-cache git=${ALPINE_GIT_VERSION} ca-certificates=${ALPINE_CA_CERTS_VERSION}
@@ -22,8 +28,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o dockhand ./cmd/dockhan
 RUN mkdir -p /state-dir
 
 # Final Stage (Distroless)
-# Use 'static-debian12' (Stable) instead of '13' (Testing)
-FROM gcr.io/distroless/static-debian12:nonroot
+# For reproducible builds pin to a digest. Example override:
+#   docker build --build-arg DISTROLESS_IMAGE=gcr.io/distroless/static-debian12@sha256:<digest> .
+ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
+FROM ${DISTROLESS_IMAGE}
 
 # Copy the binary
 COPY --from=builder /app/dockhand /app/dockhand
