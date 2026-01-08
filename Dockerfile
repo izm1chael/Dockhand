@@ -4,13 +4,17 @@
 # You can override the image at build time with a digest, e.g.:
 #   docker build --build-arg GOLANG_IMAGE=golang@sha256:<digest> .
 # Default uses the tag for local convenience; replace with a digest for CI.
-FROM golang:1.24-alpine AS builder
+ARG GOLANG_IMAGE=golang:1.25.5-alpine
+FROM ${GOLANG_IMAGE} AS builder
 
 # Install git and SSL certs (Safety first for go mod download)
-# Versions are parameterized via build args for auditability.
-ARG ALPINE_GIT_VERSION=2.42.0-r0
-ARG ALPINE_CA_CERTS_VERSION=20230829-r0
-RUN apk add --no-cache git=${ALPINE_GIT_VERSION} ca-certificates=${ALPINE_CA_CERTS_VERSION}
+# Versions are parameterized via build args for auditability. Leave empty
+# to install the distro's current package; provide a value to pin.
+ARG ALPINE_GIT_VERSION=""
+ARG ALPINE_CA_CERTS_VERSION=""
+RUN apk add --no-cache \
+	git${ALPINE_GIT_VERSION:+=${ALPINE_GIT_VERSION}} \
+	ca-certificates${ALPINE_CA_CERTS_VERSION:+=${ALPINE_CA_CERTS_VERSION}}
 
 WORKDIR /app
 
@@ -21,17 +25,18 @@ RUN go mod download
 # Build the binary
 COPY . .
 # -ldflags="-s -w" strips debug symbols to reduce binary size
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o dockhand ./cmd/dockhand
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o dockhand ./cmd/dockhand \
+	&& mkdir -p /state-dir
 
 # Prepare the state directory in the builder stage
 # (Distroless has no 'mkdir' or 'chown' commands)
-RUN mkdir -p /state-dir
 
 # Final Stage (Distroless)
-# For reproducible builds pin to a digest. Example override:
-#   docker build --build-arg DISTROLESS_IMAGE=gcr.io/distroless/static-debian12@sha256:<digest> .
-ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
-FROM ${DISTROLESS_IMAGE}
+# For reproducible builds pin to a digest. Override the FROM line in CI if
+# you need a different image; keep an explicit non-latest tag here so
+# scanners can validate the base image is not `latest` or empty.
+FROM gcr.io/distroless/static-debian12:nonroot
+
 
 # Copy the binary
 COPY --from=builder /app/dockhand /app/dockhand
