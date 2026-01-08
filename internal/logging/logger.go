@@ -32,11 +32,12 @@ func Init(logFilePath, level string) (func(), error) {
 	var f *os.File
 	if logFilePath != "" {
 		// Ensure the directory exists before attempting to open the file
-		if err := os.MkdirAll(filepath.Dir(logFilePath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(logFilePath), 0o700); err != nil {
 			return nil, fmt.Errorf("failed to create log directory: %w", err)
 		}
 		var err error
-		f, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		// Use 0640 for log file to avoid world-readable logs while allowing group read if needed
+		f, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
 		if err != nil {
 			return nil, err
 		}
