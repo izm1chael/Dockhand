@@ -1,0 +1,66 @@
+name: Codacy CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '31 8 * * 2'
+
+permissions:
+  contents: read
+
+jobs:
+  # JOB 1: Security Scan (Finds bugs & vulnerabilities)
+  security-scan:
+    name: Codacy Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read          # to fetch code
+      security-events: write  # to upload SARIF results to GitHub
+      actions: read           # to get Action run status
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Codacy Analysis CLI
+        uses: codacy/codacy-analysis-cli-action@d840f886c4bd4edc059706d09c6a1586111c540b
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          verbose: true
+          output: results.sarif
+          format: sarif
+          gh-code-scanning-compat: true
+          max-allowed-issues: 2147483647
+
+      - name: Upload SARIF results file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+
+  # JOB 2: Test & Coverage (Checks test % and reports to Codacy)
+  test-and-coverage:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run Tests
+        # Runs tests and creates the 'coverage.out' file
+        run: go test -v -coverprofile=coverage.out ./...
+
+      - name: Upload coverage to Codacy
+        uses: codacy/codacy-coverage-reporter-action@v1
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: coverage.out
