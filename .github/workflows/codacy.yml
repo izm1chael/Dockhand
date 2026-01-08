@@ -2,11 +2,11 @@ name: Codacy CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
   schedule:
-    - cron: '31 8 * * 2'
+    - cron: 31 8 * * 2
 
 permissions:
   contents: read
@@ -64,3 +64,4 @@ jobs:
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           coverage-reports: coverage.out
+          force-coverage-parser: go
