@@ -4,7 +4,7 @@
 # You can override the image at build time with a digest, e.g.:
 #   docker build --build-arg GOLANG_IMAGE=golang@sha256:<digest> .
 # Default uses the tag for local convenience; replace with a digest for CI.
-ARG GOLANG_IMAGE=golang:1.25.5-alpine
+ARG GOLANG_IMAGE=golang@sha256:ac09a5f469f307e5da71e766b0bd59c9c49ea460a528cc3e6686513d64a6f1fb
 FROM ${GOLANG_IMAGE} AS builder
 
 # Install git and SSL certs (Safety first for go mod download)
@@ -35,7 +35,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o dockhand ./cmd/dockhan
 # For reproducible builds pin to a digest. Override the FROM line in CI if
 # you need a different image; keep an explicit non-latest tag here so
 # scanners can validate the base image is not `latest` or empty.
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12@sha256:2b7c93f6d6648c11f0e80a48558c8f77885eb0445213b8e69a6a0d7c89fc6ae4
 
 
 # Copy the binary
