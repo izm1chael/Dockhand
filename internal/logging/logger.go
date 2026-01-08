@@ -36,8 +36,8 @@ func Init(logFilePath, level string) (func(), error) {
 			return nil, fmt.Errorf("failed to create log directory: %w", err)
 		}
 		var err error
-		// Use 0640 for log file to avoid world-readable logs while allowing group read if needed
-		f, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
+		// Use 0600 for log file to avoid world/group-readable logs
+		f, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err != nil {
 			return nil, err
 		}
