@@ -33,6 +33,28 @@ func (s *sdkClient) getContainerIP(st types.ContainerJSON) string {
 	return ""
 }
 
+// runNetworkHealthcheck performs HTTP/TCP checks if configured via labels
+func (s *sdkClient) runNetworkHealthcheck(ctx context.Context, st types.ContainerJSON, deadline time.Time, interval time.Duration) error {
+	ip := s.getContainerIP(st)
+	// Check for HTTP Label
+	if urlStr, ok := st.Config.Labels["dockhand.check.http"]; ok && urlStr != "" {
+		if ip == "" {
+			return fmt.Errorf("http check requested but container has no IP address")
+		}
+		return s.pollNetwork(ctx, "http", urlStr, ip, deadline, interval)
+	}
+
+	// Check for TCP Label
+	if addrStr, ok := st.Config.Labels["dockhand.check.tcp"]; ok && addrStr != "" {
+		if ip == "" {
+			return fmt.Errorf("tcp check requested but container has no IP address")
+		}
+		return s.pollNetwork(ctx, "tcp", addrStr, ip, deadline, interval)
+	}
+
+	return nil
+}
+
 // pollNetwork loops until the check succeeds or deadline is exceeded
 func (s *sdkClient) pollNetwork(ctx context.Context, mode, target, ip string, deadline time.Time, interval time.Duration) error {
 	var checkFunc func() error
