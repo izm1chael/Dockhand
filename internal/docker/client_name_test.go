@@ -99,14 +99,20 @@ func assertRenamedMatches(t *testing.T, fake *fakeDockerAPI, key, pattern string
 }
 
 func FuzzSanitizeName(f *testing.F) {
-	seeds := []string{"orig", testOrigTZ, "OrigUPPER", "........", strings.Repeat("a", 200)}
+	seeds := []string{
+		"orig",
+		testOrigTZ,
+		"OrigUPPER",
+		"........",
+		strings.Repeat("a", testMaxLen),
+	}
 	for _, s := range seeds {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
 		sdk := &sdkClient{sanitizeNames: true}
 		out := sdk.sanitizeName(input)
-		if out == "container" {
+		if out == fallbackName {
 			return
 		}
 		re := regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]+$`)
@@ -117,5 +123,4 @@ func FuzzSanitizeName(f *testing.F) {
 			t.Fatalf("sanitized name too long: %d", len(out))
 		}
 	})
-
 }
