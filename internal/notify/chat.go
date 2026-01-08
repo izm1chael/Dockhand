@@ -11,18 +11,13 @@ import (
 )
 
 // --- Slack ---
-type Slack struct {
 // Slack sends notifications to a Slack workspace using an incoming webhook.
-//
 // It implements the notifier interface used by the notify package.
-type Slack struct {
-	WebhookURL string
-}
+type Slack struct{ WebhookURL string }
 
-func (s *Slack) Name() string { return "Slack" }
 // Name returns the notifier name.
 func (s *Slack) Name() string { return "Slack" }
-func (s *Slack) Send(ctx context.Context, title, message string) error {
+
 // Send sends a notification via the Slack webhook configured for this notifier.
 func (s *Slack) Send(ctx context.Context, title, message string) error {
 	payload := map[string]string{"text": fmt.Sprintf("*%s*\n%s", title, message)}
@@ -30,18 +25,13 @@ func (s *Slack) Send(ctx context.Context, title, message string) error {
 }
 
 // --- Discord ---
-type Discord struct {
 // Discord sends notifications to a Discord channel via webhook.
-//
 // It implements the notifier interface used by the notify package.
-type Discord struct {
-	WebhookURL string
-}
+type Discord struct{ WebhookURL string }
 
-func (d *Discord) Name() string { return "Discord" }
 // Name returns the notifier name.
 func (d *Discord) Name() string { return "Discord" }
-func (d *Discord) Send(ctx context.Context, title, message string) error {
+
 // Send sends a notification to Discord using the configured webhook.
 func (d *Discord) Send(ctx context.Context, title, message string) error {
 	payload := map[string]interface{}{
@@ -52,16 +42,13 @@ func (d *Discord) Send(ctx context.Context, title, message string) error {
 }
 
 // --- Teams ---
-type Teams struct{ WebhookURL string }
 // Teams sends notifications to Microsoft Teams using an incoming webhook.
-//
 // It implements the notifier interface used by the notify package.
 type Teams struct{ WebhookURL string }
 
-func (t *Teams) Name() string { return "Teams" }
 // Name returns the notifier name.
 func (t *Teams) Name() string { return "Teams" }
-func (t *Teams) Send(ctx context.Context, title, message string) error {
+
 // Send sends a notification to Microsoft Teams using the configured webhook.
 func (t *Teams) Send(ctx context.Context, title, message string) error {
 	payload := map[string]interface{}{"@type": "MessageCard", "@context": "http://schema.org/extensions", "themeColor": "0076D7", "summary": title, "sections": []map[string]string{{"activityTitle": title, "activityText": message}}}
@@ -71,16 +58,13 @@ func (t *Teams) Send(ctx context.Context, title, message string) error {
 // --- Telegram ---
 var telegramAPIBase = "https://api.telegram.org"
 
-type Telegram struct{ BotToken, ChatID string }
 // Telegram sends messages using the Telegram Bot API.
-//
 // It implements the notifier interface used by the notify package.
 type Telegram struct{ BotToken, ChatID string }
 
-func (t *Telegram) Name() string { return "Telegram" }
 // Name returns the notifier name.
 func (t *Telegram) Name() string { return "Telegram" }
-func (t *Telegram) Send(ctx context.Context, title, message string) error {
+
 // Send sends a message via the Telegram Bot API.
 func (t *Telegram) Send(ctx context.Context, title, message string) error {
 	apiURL := fmt.Sprintf("%s/bot%s/sendMessage", telegramAPIBase, t.BotToken)
@@ -89,16 +73,13 @@ func (t *Telegram) Send(ctx context.Context, title, message string) error {
 }
 
 // --- Mastodon ---
-type Mastodon struct{ ServerURL, AccessToken string }
 // Mastodon posts statuses to a Mastodon instance using its REST API.
-//
 // It implements the notifier interface used by the notify package.
 type Mastodon struct{ ServerURL, AccessToken string }
 
-func (m *Mastodon) Name() string { return "Mastodon" }
 // Name returns the notifier name.
 func (m *Mastodon) Name() string { return "Mastodon" }
-func (m *Mastodon) Send(ctx context.Context, title, message string) error {
+
 // Send posts a status to the configured Mastodon instance.
 func (m *Mastodon) Send(ctx context.Context, title, message string) error {
 	endpoint := fmt.Sprintf("%s/api/v1/statuses", strings.TrimRight(m.ServerURL, "/"))
