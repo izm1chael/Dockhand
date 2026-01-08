@@ -5,7 +5,7 @@ Dockhand is a small, lightweight updater daemon for local Docker containers. It 
 Getting started (developer)
 
 Prerequisites
-- Go 1.24+
+- Go 1.25+
 - Docker (to test end-to-end)
 
 Build
