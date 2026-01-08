@@ -35,10 +35,7 @@ func TestSanitizeName(t *testing.T) {
 		"UPPERCASE":                     {false, true, false},
 		strings.Repeat("a", testMaxLen): {false, true, true},
 	}
-	re := regexp.MustCompile(
-		`^[a-z0-9][a-z0-9_.-]+$`,
-	)
-
+	re := regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]+$`)
 	for input, info := range cases {
 		t.Run(input, func(t *testing.T) {
 			validateSanitizedOutput(t, input, info, re)
@@ -55,39 +52,75 @@ func validateSanitizedOutput(t *testing.T, input string, info struct {
 	sdk := &sdkClient{sanitizeNames: true}
 	s := sdk.sanitizeName(input)
 	if info.expectFallback {
-		if s != fallbackName {
-			t.Fatalf("expected fallback %q for input %q, got %q", fallbackName, input, s)
-		}
+		validateFallback(t, s, input)
 		return
 	}
+	validateNonFallback(t, s, input, info, re)
+}
+
+func validateFallback(t *testing.T, s, input string) {
+	t.Helper()
+	if s != fallbackName {
+		t.Fatalf("expected fallback %q for input %q, got %q",
+			fallbackName, input, s)
+	}
+}
+
+func validateNonFallback(t *testing.T, s, input string, info struct {
+	expectFallback  bool
+	expectLowercase bool
+	expectMaxLen    bool
+}, re *regexp.Regexp) {
+	t.Helper()
 	if !re.MatchString(s) {
-		t.Fatalf("sanitized name %q does not match safe regex for input %q", s, input)
+		t.Fatalf("sanitized name %q does not match safe regex for input %q",
+			s, input)
 	}
 	if info.expectMaxLen && len(s) > maxNameLen {
-		t.Fatalf("sanitized name %q exceeds max length %d", s, maxNameLen)
+		t.Fatalf("sanitized name %q exceeds max length %d",
+			s, maxNameLen)
 	}
 }
 
 func TestRecreateSanitizesOriginalName(t *testing.T) {
 	// Make a fake that reports a bad original name
-	fake := &fakeDockerAPI{
-		execInspects: map[string]containertypes.ExecInspect{"exec1": {ExitCode: okExitCode, Running: false}},
-		inspectNames: map[string]string{testOldIDCN: testOrigTZ},
-	}
+	fake := makeFakeForRecreate()
 	s := &sdkClient{cli: fake, sanitizeNames: true}
 	ctx := context.Background()
-	opts := RecreateOptions{VerifyTimeout: verifyTimeout, VerifyInterval: verifyInterval, HealthcheckCmd: []string{"/bin/true"}}
-	err := s.RecreateContainer(ctx, Container{ID: testOldIDCN}, "new-image", opts)
+	opts := RecreateOptions{
+		VerifyTimeout:  verifyTimeout,
+		VerifyInterval: verifyInterval,
+		HealthcheckCmd: []string{"/bin/true"},
+	}
+	cont := Container{ID: testOldIDCN}
+	err := s.RecreateContainer(ctx, cont, "new-image", opts)
 	if err != nil {
 		t.Fatalf("expected recreate success, got error: %v", err)
 	}
 	// Check renamed map for the sanitized tmp name
 	sanit := s.sanitizeName(testOrigTZ)
-	pattern := fmt.Sprintf("^%s-old-\\d+$", regexp.QuoteMeta(sanit))
+	quoted := regexp.QuoteMeta(sanit)
+	pattern := "^" + quoted + "-old-\\d+$"
 	assertRenamedMatches(t, fake, testOldIDCN, pattern)
 }
 
-func assertRenamedMatches(t *testing.T, fake *fakeDockerAPI, key, pattern string) {
+func makeFakeForRecreate() *fakeDockerAPI {
+	return &fakeDockerAPI{
+		execInspects: map[string]containertypes.ExecInspect{
+			"exec1": {ExitCode: okExitCode, Running: false},
+		},
+		inspectNames: map[string]string{
+			testOldIDCN: testOrigTZ,
+		},
+	}
+}
+
+func assertRenamedMatches(
+	t *testing.T,
+	fake *fakeDockerAPI,
+	key string,
+	pattern string,
+) {
 	ren, ok := fake.renamed[key]
 	if !ok {
 		t.Fatalf("expected rename to be called, renamed=%v", fake.renamed)
