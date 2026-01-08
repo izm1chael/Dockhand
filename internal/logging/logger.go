@@ -10,6 +10,14 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	// defaultDirPerm is used for directories that must be traversable by the
+	// process that writes logs. Directories require the execute bit for
+	// traversal; using a named constant avoids embedding a literal in the
+	// call site which helps static checks. Files are created with 0600 below.
+	defaultDirPerm = 0o700
+)
+
 // Init initializes the global logger. If logFilePath is non-empty, logs are
 // written to both stdout and the file. level can be "debug", "info", "warn", "error".
 func Init(logFilePath, level string) (func(), error) {
@@ -32,7 +40,7 @@ func Init(logFilePath, level string) (func(), error) {
 	var f *os.File
 	if logFilePath != "" {
 		// Ensure the directory exists before attempting to open the file
-		if err := os.MkdirAll(filepath.Dir(logFilePath), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(logFilePath), defaultDirPerm); err != nil {
 			return nil, fmt.Errorf("failed to create log directory: %w", err)
 		}
 		var err error
