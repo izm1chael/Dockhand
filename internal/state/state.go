@@ -23,13 +23,27 @@ const stateFileName = "dockhand_state.json"
 
 func stateFilePath() string {
 	if dir := os.Getenv("DOCKHAND_STATE_DIR"); dir != "" {
-		return filepath.Join(dir, stateFileName)
+		// Validate and canonicalize the provided directory to avoid
+		// accidental path traversal or relative paths coming from the
+		// environment. If the env value cannot be resolved to an absolute
+		// clean path, ignore it and fall through to defaults.
+		dir = filepath.Clean(dir)
+		if !filepath.IsAbs(dir) {
+			if abs, err := filepath.Abs(dir); err == nil {
+				dir = abs
+			} else {
+				dir = ""
+			}
+		}
+		if dir != "" {
+			return filepath.Join(dir, stateFileName)
+		}
 	}
 	// Prefer a persistent location under /var/lib/dockhand when possible; fall back to the current working dir
 	// to avoid relying on ephemeral temp directories that may be cleared on reboot.
 	defaultDir := "/var/lib/dockhand"
-	// Try to create default directory; if not possible, fall back to cwd
-	if err := os.MkdirAll(defaultDir, 0o755); err == nil {
+	// Try to create default directory with restrictive permissions; if not possible, fall back to cwd
+	if err := os.MkdirAll(defaultDir, 0o700); err == nil {
 		return filepath.Join(defaultDir, stateFileName)
 	}
 	if wd, err := os.Getwd(); err == nil {
@@ -87,7 +101,8 @@ func saveAllUnlocked(m map[string]RenameRecord) error {
 	if err != nil {
 		return fmt.Errorf("marshal state: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	// Ensure directory exists with restrictive permissions
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return fmt.Errorf("mkdir state dir: %w", err)
 	}
 	if err := os.WriteFile(p, b, 0o640); err != nil {

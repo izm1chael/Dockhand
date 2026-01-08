@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const invalidEnvFmt = "invalid %s: %w"
+
 // ApplyEnvOverrides reads configuration values from environment variables and
 // overrides fields in the provided Config. Returns an error if parsing fails.
 //
@@ -153,7 +155,7 @@ func setBoolEnv(env string, setter func(bool)) error {
 	if v := os.Getenv(env); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
-			return fmt.Errorf("invalid %s: %w", env, err)
+			return fmt.Errorf(invalidEnvFmt, env, err)
 		}
 		setter(b)
 	}
@@ -189,7 +191,7 @@ func setDurationEnv(env string, setter func(time.Duration)) error {
 	if v := os.Getenv(env); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			return fmt.Errorf("invalid %s: %w", env, err)
+			return fmt.Errorf(invalidEnvFmt, env, err)
 		}
 		setter(d)
 	}
@@ -201,7 +203,7 @@ func setIntEnv(env string, setter func(int)) error {
 	if v := os.Getenv(env); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return fmt.Errorf("invalid %s: %w", env, err)
+			return fmt.Errorf(invalidEnvFmt, env, err)
 		}
 		setter(n)
 	}
