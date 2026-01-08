@@ -1,10 +1,10 @@
 package state
 
 import (
-    "os"
-    "path/filepath"
-    "testing"
-    "time"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
 )
 
 func TestStateCRUD(t *testing.T) {

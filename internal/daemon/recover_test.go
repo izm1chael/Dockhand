@@ -35,7 +35,7 @@ func (f *fakeClientForRecover) RenameContainer(ctx context.Context, containerID,
 	f.renamed[containerID] = newName
 	return nil
 }
-func (f *fakeClientForRecover) SpawnWorker(ctx context.Context, image string, cmd []string, name string, binds []string, labels map[string]string) (string, error) {
+func (f *fakeClientForRecover) SpawnWorker(ctx context.Context, image string, cmd []string, opts docker.WorkerOptions) (string, error) {
 	return "", nil
 }
 func (f *fakeClientForRecover) ReplaceContainer(ctx context.Context, targetID, newImage string) error {

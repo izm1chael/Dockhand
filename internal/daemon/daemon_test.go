@@ -43,12 +43,12 @@ func (f *fakeClient) RemoveImage(ctx context.Context, imageID string) error {
 	return nil
 }
 
-func (f *fakeClient) SpawnWorker(ctx context.Context, image string, cmd []string, name string, binds []string, labels map[string]string) (string, error) {
+func (f *fakeClient) SpawnWorker(ctx context.Context, image string, cmd []string, opts docker.WorkerOptions) (string, error) {
 	f.spawnedWorker = true
-	f.spawnedName = name
+	f.spawnedName = opts.Name
 	f.spawnedImage = image
 	f.spawnedCmd = cmd
-	f.spawnedBinds = binds
+	f.spawnedBinds = opts.Binds
 	return "worker-1", nil
 }
 

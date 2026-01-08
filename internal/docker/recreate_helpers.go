@@ -24,19 +24,21 @@ func (s *sdkClient) performRecreate(ctx context.Context, ctn Container, newImage
 	// Prepare config for new container
 	newCfg, hostCfg, netCfg := s.prepareNewContainerConfig(insp, newImage)
 
-	// Create new container with original name (rollback on create failure)
-	resp, err := s.createNewContainerWithRollback(ctx, newCfg, hostCfg, netCfg, origName, insp)
+	configs := containerConfigs{config: newCfg, host: hostCfg, net: netCfg}
+	resp, err := s.createNewContainerWithRollback(ctx, configs, origName, insp)
 	if err != nil {
 		return err
 	}
 
+	swap := swapContext{newID: resp.ID, original: insp, origName: origName}
+
 	// Start new container
-	if err := s.startNewContainer(ctx, resp.ID, insp, origName); err != nil {
+	if err := s.startNewContainer(ctx, swap); err != nil {
 		return err
 	}
 
 	// Verify new container (this will remove old on success or roll back on failure)
-	if err := s.verifyNewContainer(ctx, resp.ID, insp, origName, opts); err != nil {
+	if err := s.verifyNewContainer(ctx, swap, opts); err != nil {
 		return err
 	}
 

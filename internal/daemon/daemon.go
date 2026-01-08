@@ -559,7 +559,8 @@ func (d *Daemon) triggerSelfUpdate(ctx context.Context, cli docker.Client, myCon
 	binds := []string{fmt.Sprintf("%s:/var/run/docker.sock", d.cfg.HostSocketPath)}
 	cmd := []string{"/app/dockhand", "--self-update-worker", myContainerID, "--self-update-image", newImage}
 	labels := map[string]string{"dockhand.worker": "true"}
-	if _, err := cli.SpawnWorker(ctx, newImage, cmd, name, binds, labels); err != nil {
+	workerOpts := docker.WorkerOptions{Name: name, Binds: binds, Labels: labels}
+	if _, err := cli.SpawnWorker(ctx, newImage, cmd, workerOpts); err != nil {
 		logging.Get().Error().Err(err).Msg("failed to spawn update worker")
 		return
 	}

@@ -1,7 +1,7 @@
 package semver
 
 import (
-    "testing"
+	"testing"
 )
 
 func TestSelectHighestTag_MatchesHighest(t *testing.T) {
