@@ -7,6 +7,18 @@ import (
 )
 
 func TestApplyEnvOverrides(t *testing.T) {
+	cleanup := applyEnvSetup(t)
+	defer cleanup()
+
+	cfg := DefaultConfig()
+	if err := ApplyEnvOverrides(cfg); err != nil {
+		t.Fatalf("ApplyEnvOverrides failed: %v", err)
+	}
+	validateAppliedEnvOverrides(t, cfg)
+}
+
+func applyEnvSetup(t *testing.T) func() {
+	t.Helper()
 	os.Setenv("DOCKHAND_POLL_INTERVAL", "2m")
 	os.Setenv("DOCKHAND_PATCH_WINDOW", "01:00-03:00")
 	os.Setenv("DOCKHAND_MANAGE_LATEST_ONLY", "false")
@@ -20,7 +32,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 	os.Setenv("DOCKHAND_INFLUX_INTERVAL", "30s")
 	// apprise
 	os.Setenv("DOCKHAND_APPRISE_URL", "https://apprise.example/send")
-	defer func() {
+	return func() {
 		os.Unsetenv("DOCKHAND_POLL_INTERVAL")
 		os.Unsetenv("DOCKHAND_PATCH_WINDOW")
 		os.Unsetenv("DOCKHAND_MANAGE_LATEST_ONLY")
@@ -33,12 +45,11 @@ func TestApplyEnvOverrides(t *testing.T) {
 		os.Unsetenv("DOCKHAND_INFLUX_TOKEN")
 		os.Unsetenv("DOCKHAND_INFLUX_INTERVAL")
 		os.Unsetenv("DOCKHAND_APPRISE_URL")
-	}()
-
-	cfg := DefaultConfig()
-	if err := ApplyEnvOverrides(cfg); err != nil {
-		t.Fatalf("ApplyEnvOverrides failed: %v", err)
 	}
+}
+
+func validateAppliedEnvOverrides(t *testing.T, cfg *Config) {
+	t.Helper()
 	if cfg.PollInterval != 2*time.Minute {
 		t.Fatalf("expected poll 2m, got %v", cfg.PollInterval)
 	}

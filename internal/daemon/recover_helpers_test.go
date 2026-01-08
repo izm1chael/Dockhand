@@ -13,27 +13,43 @@ func TestFindStaleEntries(t *testing.T) {
 	c2 := docker.Container{ID: "b", Names: []string{"/app"}}
 	list := []docker.Container{c1, c2}
 	d := &Daemon{}
+
+	checkNoStaleWhenOriginalExists(t, d, list)
+	checkNoStaleWithoutRecordedRename(t, d, list)
+	checkStaleWhenRecorded(t, d, list)
+}
+
+func checkNoStaleWhenOriginalExists(t *testing.T, d *Daemon, list []docker.Container) {
+	t.Helper()
 	existing := d.buildExistingNames(list)
 	entries := d.findStaleEntries(list, existing)
 	if len(entries) != 0 {
 		t.Fatalf("expected 0 stale entries when original exists, got %d", len(entries))
 	}
+}
 
-	// Now remove the original but without a recorded rename => no stale entries
-	list = []docker.Container{c1}
-	existing = d.buildExistingNames(list)
-	entries = d.findStaleEntries(list, existing)
+func checkNoStaleWithoutRecordedRename(t *testing.T, d *Daemon, list []docker.Container) {
+	t.Helper()
+	// remove the original but without a recorded rename => no stale entries
+	list = []docker.Container{list[0]}
+	existing := d.buildExistingNames(list)
+	entries := d.findStaleEntries(list, existing)
 	if len(entries) != 0 {
 		t.Fatalf("expected 0 stale entries without a recorded rename, got %d", len(entries))
 	}
+}
 
-	// Now add a recorded rename and expect it to be considered
+func checkStaleWhenRecorded(t *testing.T, d *Daemon, list []docker.Container) {
+	t.Helper()
+	// add a recorded rename and expect it to be considered
 	t.Setenv("DOCKHAND_STATE_DIR", t.TempDir())
 	if err := state.AddRenameRecord(state.RenameRecord{ContainerID: "a", TmpName: "app-old-123", OrigName: "app", Timestamp: time.Now()}); err != nil {
 		t.Fatalf("failed to setup state: %v", err)
 	}
 
-	entries = d.findStaleEntries(list, existing)
+	list = []docker.Container{list[0]}
+	existing := d.buildExistingNames(list)
+	entries := d.findStaleEntries(list, existing)
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 stale entry when recorded, got %d", len(entries))
 	}

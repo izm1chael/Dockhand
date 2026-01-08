@@ -21,6 +21,11 @@ func (c *controlled) Send(ctx context.Context, title, message string) error {
 func (c *controlled) Name() string { return "controlled" }
 
 func TestBackoffJitterAndSleepHook(t *testing.T) {
+	runBackoffJitterTest(t)
+}
+
+func runBackoffJitterTest(t *testing.T) {
+	t.Helper()
 	m := NewMultiNotifier()
 	oldSleep := sleepHook
 	durations := make([]time.Duration, 0)
