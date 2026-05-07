@@ -96,7 +96,6 @@ You can also configure Dockhand using environment variables (handy for Docker Co
 - `DOCKHAND_HOST_SOCKET_PATH` (string) — optional path to the Docker socket on the *host* machine. Use this when the host socket is located in a non-standard path (e.g., rootless Docker or NAS setups). Default: `/var/run/docker.sock`. When set, ensure you mount that host path into the container at `/var/run/docker.sock` (e.g., `- /volume1/custom/docker.sock:/var/run/docker.sock`).
 - `DOCKHAND_CIRCUIT_BREAKER_THRESHOLD` (int) — number of repeated pull failures before suppressing further failure notifications for the same image; default: `3`
 - `DOCKHAND_CIRCUIT_BREAKER_COOLDOWN` (duration, e.g. `10m`) — duration to suppress repeated pull failure notifications after the threshold is hit; default: `10m`
-- `DOCKHAND_STATE_DIR` (string) — optional directory to store Dockhand state files (used to record rename operations for safe recovery); default: OS temp directory
 
 Notifier-related env vars (examples):
 - `DOCKHAND_DISCORD_WEBHOOK` — Discord webhook URL

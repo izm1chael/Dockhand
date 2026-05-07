@@ -75,7 +75,7 @@ func main() {
 	initMetricsAndInflux(cfg)
 
 	// Verify Docker socket is accessible (common pitfall when running in containers)
-	ensureDockerSocketAccessible()
+	ensureDockerSocketAccessible(cfg.HostSocketPath)
 
 	// create docker clients (one per configured host) then start daemon
 	ctx := context.Background()
@@ -172,7 +172,7 @@ func initMetricsAndInflux(cfg *config.Config) {
 				return
 			}
 			logging.Get().Warn().Str("addr", addr).Msg("starting metrics server without TLS; consider enabling DOCKHAND_METRICS_TLS_CERT/_KEY or using a TLS terminator")
-			if err := http.ListenAndServe(addr, mux); err != nil {
+			if err := http.ListenAndServe(addr, mux); err != nil { // nosemgrep: go.lang.security.audit.net.use-tls.use-tls
 				logging.Get().Fatal().Err(err).Msg("metrics server failed")
 			}
 		}()
@@ -183,12 +183,12 @@ func initMetricsAndInflux(cfg *config.Config) {
 }
 
 // ensureDockerSocketAccessible wraps checkDockerSocketAccess and logs/fatals appropriately
-func ensureDockerSocketAccessible() {
-	if err := checkDockerSocketAccess("/var/run/docker.sock"); err != nil {
+func ensureDockerSocketAccessible(socketPath string) {
+	if err := checkDockerSocketAccess(socketPath); err != nil {
 		if os.IsPermission(err) {
-			logging.Get().Fatal().Msg("permission denied accessing /var/run/docker.sock: ensure the container user has appropriate group access (e.g., --group-add docker) or bind mount with matching GID)")
+			logging.Get().Fatal().Msgf("permission denied accessing %s: ensure the container user has appropriate group access (e.g., --group-add docker) or bind mount with matching GID)", socketPath)
 		} else {
-			logging.Get().Warn().Err(err).Msg("warning: problem accessing /var/run/docker.sock; continuing but operations may fail")
+			logging.Get().Warn().Err(err).Msgf("warning: problem accessing %s; continuing but operations may fail", socketPath)
 		}
 	}
 }
