@@ -5,6 +5,7 @@ Dockhand is a small, lightweight updater daemon for local Docker containers. It 
 Getting started (developer)
 
 Prerequisites
+
 - Go 1.25+
 - Docker (to test end-to-end)
 
@@ -98,6 +99,7 @@ You can also configure Dockhand using environment variables (handy for Docker Co
 - `DOCKHAND_CIRCUIT_BREAKER_COOLDOWN` (duration, e.g. `10m`) — duration to suppress repeated pull failure notifications after the threshold is hit; default: `10m`
 
 Notifier-related env vars (examples):
+
 - `DOCKHAND_DISCORD_WEBHOOK` — Discord webhook URL
 - `DOCKHAND_SLACK_WEBHOOK` — Slack webhook URL
 - `DOCKHAND_TEAMS_WEBHOOK` — Microsoft Teams webhook URL
@@ -125,19 +127,23 @@ Behavior details
 }
 
 ```
+
 - Metrics / Observability: Dockhand exposes three complementary outputs:
   - Prometheus (/metrics): standard Prometheus metrics endpoint for scraping.
   - JSON API (/status): a convenience endpoint returning a JSON snapshot of counters for systems like Zabbix or Uptime Kuma.
   - InfluxDB (push): optional push-based reporting to InfluxDB v2 when `DOCKHAND_INFLUX_URL` and related settings are configured.
 
 Lifecycle hooks
+
 - `dockhand.pre-update`: If set on a container, the given command (string) will be executed inside the running container before attempting an update. If the command fails, the update is aborted. Note: the command is run via `sh -c` inside the container, so the target image must include a POSIX shell (e.g., `sh`), otherwise the hook will fail. For scratch/distroless images, prefer host-side hooks or ensure a shell is present in the image.
 - `dockhand.post-update`: If set, the command will be executed inside the new container after it starts; if it fails, Dockhand will roll back to the previous container.
 
 Registry authentication
+
 - For private registries, provide `DOCKHAND_REGISTRY_USER` and `DOCKHAND_REGISTRY_PASS` environment variables to enable basic pull authentication, or mount `/root/.docker/config.json` for full docker credential support.
 
 CLI flags
+
 - `--config` (string): path to a YAML/JSON configuration file (overrides defaults).
 - `--poll-interval` (duration): interval between update checks (e.g. `10m`, `1h`). Default: 5 minutes.
 - `--run-once`: run a single reconciliation pass and exit (useful in cron jobs).
@@ -148,6 +154,7 @@ CLI flags
 Notes & edge cases
 
 Running Dockhand as non-root with Docker socket access
+
 - For security, the Docker socket should not be mounted into a container running as root unless you trust the image. The recommended approach is:
   1. Create a `docker` group on the host and add an unprivileged user to that group.
   2. Run the container with the same `gid` or use `--group-add` so the process can access `/var/run/docker.sock` without being root.
@@ -166,7 +173,6 @@ Running Dockhand as non-root with Docker socket access
   Note: Dockhand now performs a startup check and will error out if it detects permission denied accessing `/var/run/docker.sock`. If you see a fatal error about socket permissions, ensure the container user has group access to the socket (e.g., `--group-add docker`) or bind-mount with a user/group that matches the host's docker group.
 
   If you prefer to run as non-root inside the container (recommended), ensure the non-root user belongs to a group that has access to the socket. This improves security compared to running processes as root.
-
 
 - Networking & volumes: Dockhand attempts to preserve the previous container's `HostConfig` and `NetworkingConfig` so ports, volumes, and networks are retained. However, custom networking setups should be tested — Dockhand will attempt to re-attach the new container to the same networks as the previous one.
 - Environment variables: Dockhand reuses the previous container's environment (so changes in image defaults are not automatically merged). If you rely on image-updated default env vars, consider updating your container definitions.
@@ -202,6 +208,7 @@ services:
 ```
 
 Notes:
+
 - The policy value is a SemVer constraint (compatible with Masterminds/semver). Examples: `14.x`, `^14.0`, `>=14.2 <15.0`.
 - Dockhand will skip non-semver tags (for example `latest` or custom channel names) when resolving a SemVer policy.
 - If resolution fails (registry inaccessible or no matching tags) Dockhand will skip updating that container for the current pass and log an error; it will not attempt to apply an incorrect tag.
