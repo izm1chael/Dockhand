@@ -62,6 +62,7 @@ func (m *MultiNotifier) ProviderCooldown(name string) time.Duration {
 	}
 	return m.cooldown
 }
+// NewMultiNotifier returns a MultiNotifier with default cooldown settings.
 func NewMultiNotifier() *MultiNotifier {
 	return &MultiNotifier{services: make([]Service, 0), lastSent: make(map[string]time.Time), cooldown: DefaultNotifierCooldown}
 }
@@ -82,12 +83,14 @@ func (m *MultiNotifier) Wait(ctx context.Context) error {
 	}
 }
 
+// Add appends a non-nil Service to the notifier's list of active services.
 func (m *MultiNotifier) Add(s Service) {
 	if s != nil {
 		m.services = append(m.services, s)
 	}
 }
 
+// Len returns the number of registered notification services.
 func (m *MultiNotifier) Len() int {
 	return len(m.services)
 }

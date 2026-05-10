@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-// sendMailHook allows tests to override SMTP sending behavior
 // sendMailHook allows tests to override SMTP sending behavior.
 var sendMailHook = smtp.SendMail
 

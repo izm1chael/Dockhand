@@ -52,11 +52,7 @@ func ApplyEnvOverrides(cfg *Config) error {
 	}
 
 	// Misc (dry-run, registry, gotify, pushover, notification level)
-	if err := applyMiscEnv(cfg); err != nil {
-		return err
-	}
-
-	return nil
+	return applyMiscEnv(cfg)
 }
 
 // applyBasicEnv consolidates basic fields and boolean env parsing
@@ -93,10 +89,7 @@ func applyMiscEnv(cfg *Config) error {
 	if err := applyPushNotifications(cfg); err != nil {
 		return err
 	}
-	if err := applyRuntimeFlags(cfg); err != nil {
-		return err
-	}
-	return nil
+	return applyRuntimeFlags(cfg)
 }
 
 func applyDryRunAndRegistry(cfg *Config) error {
@@ -140,14 +133,11 @@ func applyRuntimeFlags(cfg *Config) error {
 	if err := setBoolEnv("DOCKHAND_PIN_DIGESTS", func(b bool) { cfg.PinDigests = b }); err != nil {
 		return err
 	}
-	if err := setIntEnv("DOCKHAND_MAX_CONCURRENT_UPDATES", func(n int) {
+	return setIntEnv("DOCKHAND_MAX_CONCURRENT_UPDATES", func(n int) {
 		if n > 0 {
 			cfg.MaxConcurrentUpdates = n
 		}
-	}); err != nil {
-		return err
-	}
-	return nil
+	})
 }
 
 // setBoolEnv is a small helper to parse boolean environment variables
@@ -173,10 +163,7 @@ func applyNotificationEnv(cfg *Config) error {
 	setStringEnv("DOCKHAND_MASTODON_TOKEN", func(s string) { cfg.MastodonToken = s })
 	setStringEnv("DOCKHAND_GENERIC_WEBHOOK_URL", func(s string) { cfg.GenericWebhookURL = s })
 	setStringEnv("DOCKHAND_APPRISE_URL", func(s string) { cfg.AppriseURL = s })
-	if err := setDurationEnv("DOCKHAND_HOOK_TIMEOUT", func(d time.Duration) { cfg.HookTimeout = d }); err != nil {
-		return err
-	}
-	return nil
+	return setDurationEnv("DOCKHAND_HOOK_TIMEOUT", func(d time.Duration) { cfg.HookTimeout = d })
 }
 
 // setStringEnv assigns an environment variable string to a setter if non-empty

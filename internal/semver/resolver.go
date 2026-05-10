@@ -11,12 +11,13 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
+// Resolver resolves image tags against a semver policy using the registry API.
 type Resolver struct {
-	// auth can be enhanced to support custom static creds if needed,
-	// currently relies on standard docker config (~/.docker/config.json)
+	// relies on standard docker config (~/.docker/config.json) for auth
 	keychain authn.Keychain
 }
 
+// NewResolver returns a Resolver using the default Docker keychain for registry auth.
 func NewResolver() *Resolver {
 	return &Resolver{
 		keychain: authn.DefaultKeychain,

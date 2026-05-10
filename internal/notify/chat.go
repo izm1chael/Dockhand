@@ -11,8 +11,8 @@ import (
 )
 
 // --- Slack ---
+
 // Slack sends notifications to a Slack workspace using an incoming webhook.
-// It implements the notifier interface used by the notify package.
 type Slack struct{ WebhookURL string }
 
 // Name returns the notifier name.
@@ -25,8 +25,8 @@ func (s *Slack) Send(ctx context.Context, title, message string) error {
 }
 
 // --- Discord ---
+
 // Discord sends notifications to a Discord channel via webhook.
-// It implements the notifier interface used by the notify package.
 type Discord struct{ WebhookURL string }
 
 // Name returns the notifier name.
@@ -42,8 +42,8 @@ func (d *Discord) Send(ctx context.Context, title, message string) error {
 }
 
 // --- Teams ---
+
 // Teams sends notifications to Microsoft Teams using an incoming webhook.
-// It implements the notifier interface used by the notify package.
 type Teams struct{ WebhookURL string }
 
 // Name returns the notifier name.
@@ -73,8 +73,8 @@ func (t *Telegram) Send(ctx context.Context, title, message string) error {
 }
 
 // --- Mastodon ---
+
 // Mastodon posts statuses to a Mastodon instance using its REST API.
-// It implements the notifier interface used by the notify package.
 type Mastodon struct{ ServerURL, AccessToken string }
 
 // Name returns the notifier name.

@@ -18,13 +18,14 @@ import (
 	"github.com/dockhand/dockhand/internal/state"
 )
 
-// Daemon is the core loop that checks for image updates and applies them
+// failureInfo tracks consecutive pull failures for circuit breaker state.
 type failureInfo struct {
 	count           int
 	lastFailureAt   time.Time
 	suppressedUntil time.Time
 }
 
+// Daemon is the core loop that checks for image updates and applies them.
 type Daemon struct {
 	cfg      *config.Config
 	hosts    []Host
@@ -40,8 +41,7 @@ type Daemon struct {
 	pullFailures map[string]*failureInfo
 }
 
-// New creates a daemon with an injected docker client
-// Host represents a managed Docker endpoint
+// Host represents a managed Docker endpoint.
 type Host struct {
 	Name   string
 	Client docker.Client
