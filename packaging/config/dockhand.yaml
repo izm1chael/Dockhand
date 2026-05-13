@@ -1,0 +1,60 @@
+# Dockhand configuration
+# Full documentation: https://github.com/izm1chael/dockhand
+
+poll_interval: 10m
+manage_latest_only: true
+opt_out: true
+notification_level: all
+dry_run: false
+sanitize_names: true
+pin_digests: false
+max_concurrent_updates: 1
+
+# patch_window: "00:00-02:00"
+
+verify_timeout: 10s
+verify_interval: 500ms
+hook_timeout: 5m
+circuit_breaker_threshold: 3
+circuit_breaker_cooldown: 10m
+
+host_socket_path: /var/run/docker.sock
+
+# docker_hosts:
+#   - unix:///var/run/docker.sock
+#   - tcp://192.168.1.5:2375
+
+# --- Metrics (opt-in) ---
+metrics_enabled: false
+metrics_port: 9090
+
+# --- InfluxDB (opt-in) ---
+# influx_url: ""
+# influx_token: ""
+# influx_org: ""
+# influx_bucket: ""
+# influx_interval: 1m
+
+# --- Registry auth (if needed) ---
+# registry_user: ""
+# registry_pass: ""
+
+# --- Notifications (fill in the ones you use) ---
+# discord_webhook: ""
+# slack_webhook: ""
+# teams_webhook: ""
+# generic_webhook_url: ""
+# gotify_url: ""
+# gotify_token: ""
+# pushover_user: ""
+# pushover_token: ""
+# telegram_token: ""
+# telegram_chat_id: ""
+# mastodon_server: ""
+# mastodon_token: ""
+# apprise_url: ""
+# email_host: ""
+# email_port: 587
+# email_user: ""
+# email_pass: ""
+# email_to: []

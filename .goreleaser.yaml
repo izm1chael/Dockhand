@@ -41,6 +41,44 @@ changelog:
       - '^docs:'
       - '^test:'
 
+nfpms:
+  - id: dockhand
+    package_name: dockhand
+    vendor: izm1chael
+    homepage: https://github.com/izm1chael/dockhand
+    maintainer: izm1chael <noreply@github.com>
+    description: |
+      Dockhand is a lightweight Docker container auto-update daemon.
+      It polls registries and safely recreates containers when new
+      image versions are available, with rollback on failure.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    contents:
+      - src: packaging/dockhand.service
+        dst: /usr/lib/systemd/system/dockhand.service
+      - src: packaging/config/dockhand.yaml
+        dst: /etc/dockhand/config.yaml
+        type: config|noreplace
+        file_info:
+          mode: 0640
+      - dst: /var/lib/dockhand
+        type: dir
+        file_info:
+          mode: 0750
+    scripts:
+      postinstall: packaging/scripts/postinstall.sh
+      preremove: packaging/scripts/preremove.sh
+    deb:
+      fields:
+        Recommends: docker-ce | docker.io
+    rpm:
+      summary: Docker container auto-update daemon
+      group: System Environment/Daemons
+      compression: gzip
+
 release:
   footer: |
     ## Docker Images

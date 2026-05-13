@@ -1,5 +1,10 @@
 # Dockhand
 
+[![CI](https://github.com/izm1chael/dockhand/actions/workflows/build-and-push.yml/badge.svg?branch=main)](https://github.com/izm1chael/dockhand/actions/workflows/build-and-push.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Go Report](https://goreportcard.com/badge/github.com/izm1chael/dockhand)](https://goreportcard.com/report/github.com/izm1chael/dockhand)
+[![Docker Pulls](https://img.shields.io/docker/pulls/izm1chael/dockhand.svg)](https://hub.docker.com/r/izm1chael/dockhand)
+
 Dockhand is a small, lightweight updater daemon for local Docker containers. It periodically polls configured registries/images and safely performs updates for running containers (pull → recreate → healthcheck → rollback on failure). Think of it as a modern, minimal alternative to Watchtower/Ouroboros.
 
 Getting started (developer)
@@ -235,6 +240,34 @@ wget https://github.com/izm1chael/dockhand/releases/download/${LATEST}/dockhand_
 tar -xzf dockhand_${LATEST}_linux_amd64.tar.gz
 ./dockhand --poll-interval=10m
 ```
+
+## Linux packages (DEB / RPM)
+
+Native `.deb` and `.rpm` packages are published with each release for amd64 and arm64. Installing a package will place the binary at `/usr/bin/dockhand`, create a `dockhand` system user, and enable a systemd service that starts automatically.
+
+```bash
+# Fetch the latest version tag
+LATEST=$(curl -s https://api.github.com/repos/izm1chael/dockhand/releases/latest | grep '"tag_name"' | cut -d '"' -f 4)
+
+# Debian / Ubuntu (amd64)
+wget https://github.com/izm1chael/dockhand/releases/download/${LATEST}/dockhand_${LATEST}_linux_amd64.deb
+sudo dpkg -i dockhand_${LATEST}_linux_amd64.deb
+
+# RHEL / Fedora / Rocky (amd64)
+wget https://github.com/izm1chael/dockhand/releases/download/${LATEST}/dockhand-${LATEST#v}-1.x86_64.rpm
+sudo rpm -i dockhand-${LATEST#v}-1.x86_64.rpm
+```
+
+arm64 packages follow the same pattern — replace `amd64` with `arm64` for DEB, or `x86_64` with `aarch64` for RPM.
+
+After install, edit `/etc/dockhand/config.yaml` then check the service:
+
+```bash
+sudo systemctl status dockhand
+sudo journalctl -u dockhand -f
+```
+
+> **Note:** The installer adds the `dockhand` user to the `docker` group automatically. If Docker was not installed yet at package install time, run `sudo usermod -aG docker dockhand && sudo systemctl restart dockhand` once Docker is available.
 
 ## How to Update Dockhand
 

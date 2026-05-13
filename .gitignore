@@ -1,3 +1,6 @@
+# Runtime state
+internal/docker/dockhand_state.json
+
 # Binaries
 /bin/
 /pkg/

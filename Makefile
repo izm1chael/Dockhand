@@ -1,6 +1,6 @@
 BINARY=bin/dockhand
 
-.PHONY: build test docker-build clean
+.PHONY: build test docker-build clean package
 
 build:
 	mkdir -p bin
@@ -12,5 +12,8 @@ test:
 docker-build:
 	docker build -t dockhand:local .
 
+package:
+	goreleaser release --snapshot --clean --skip=publish
+
 clean:
-	rm -rf $(BINARY)
+	rm -rf $(BINARY) dist/

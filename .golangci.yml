@@ -1,0 +1,9 @@
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+      - name: if-return
+        severity: warning
+        disabled: false

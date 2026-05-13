@@ -1,0 +1,25 @@
+[Unit]
+Description=Dockhand - Docker container auto-update daemon
+Documentation=https://github.com/izm1chael/dockhand
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=dockhand
+Group=docker
+ExecStart=/usr/bin/dockhand --config /etc/dockhand/config.yaml
+Environment=DOCKHAND_STATE_DIR=/var/lib/dockhand
+EnvironmentFile=-/etc/dockhand/env
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30
+KillMode=process
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/dockhand /var/log
+
+[Install]
+WantedBy=multi-user.target
